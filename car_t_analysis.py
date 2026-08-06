@@ -172,9 +172,6 @@ info_cart = pd.read_csv(os.path.join(dir_raw,"clinical_data.csv"))
 # _ in patient_id
 info_cart["sample_id"] = info_cart["sample_id"].str.replace(" ", "_")
 
-# remove unknown (3 and 4 group)
-info_cart = info_cart[info_cart['group_analysis_1'] != "unknown"]
-
 expr_samples = set(expression.columns)
 clin_samples = set(info_cart["sample_id"])
 common_samples = sorted(expr_samples & clin_samples)
@@ -195,8 +192,6 @@ assert list(counts.index) == list(meta.index), "Индексы counts и meta н
 
 
 # Make category covariates
-#meta = meta.dropna(subset=["batch_nexp", "batch_seq", "group_analysis_1"])
-#counts = counts.loc[meta.index]
 
 meta["batch_nexp"] = meta["batch_nexp"].astype(str)
 meta["batch_seq"] = meta["batch_seq"].astype(str)
@@ -204,7 +199,6 @@ meta["group_analysis_1"] = meta["group_analysis_1"].astype(str)
 meta["group_analysis_2"] = meta["group_analysis_2"].astype(str)
 meta["timepoint"] = meta["timepoint"].astype(str)
 meta["patient_id"] = meta["patient_id"].astype(str)
-
 
 # correlation between batch_nexp and batch_seq to choose batch
 tab = pd.crosstab(meta["batch_nexp"], meta["batch_seq"])
@@ -234,10 +228,12 @@ plt.show()
 
 #%%
 
-#4. DESeq2
+#4. DESeq2 without 3 and 4 group
 # to see full picture, clusterization
 # PCA, check outlier and remove batch effects
 # resonder/unresponder and old/new experiment
+
+# нужно ли учитывать timepoint???
 
 design_formula = "~ batch_nexp + group_analysis_1"
 
@@ -260,6 +256,8 @@ mat_vst = pd.DataFrame(
 # for GSEA
 expr_all = mat_vst.T  # genes X samples
 expr_all.index.name = "gene"
+
+
 expr_all.to_csv(os.path.join(dir_proc, "expr_all_vst.tsv"), sep="\t")
 
 # mat_vst: samples × genes
@@ -374,9 +372,6 @@ plt.tight_layout()
 plt.savefig(os.path.join(figures_dir, "pca_seqbatch.png"), bbox_inches='tight', dpi=300)
 plt.show()
 
-
-#%%
-
 # by timepoint
 # subset meta per timepoint
 meta_prod = meta[meta["timepoint"] == "product"]
@@ -460,9 +455,14 @@ plt.tight_layout()
 plt.savefig(os.path.join(figures_dir, "pca_d28_after_group1.png"), bbox_inches='tight', dpi=300)
 plt.show()
 
-#%%
 
 #6. DE analysis per each timepoint (product / d7 / d28)
+
+
+meta_all = meta.copy()
+# remove unknown (3 and 4 group)
+meta = meta[meta['group_analysis_1'] != "unknown"]
+
 # for GSEA
 meta_prod = meta[meta["timepoint"] == "product"].copy()
 counts_prod = counts.loc[meta_prod.index]
@@ -536,45 +536,59 @@ gsea_prod = save_files(results_prod, timepoint="prod")
 gsea_d7 = save_files(results_d7, timepoint="d7")
 gsea_d28 = save_files(results_d28, timepoint="d28")
 
-gsea_prod.head()
-
 # %%
-# 7. GSEA global
-# нужны subsets???
-'''
-expr_all = pd.read_csv(os.path.join(dir_proc, "expr_all_vst.tsv"), index_col=0, sep="\t")
+# 7. ranked GSEA global
 
-out_dir = os.path.join(results_dir, 'results_gsea_gb')
-os.makedirs(out_dir, exist_ok=True)
+DE_prod_ranked = pd.read_csv(os.path.join(results_dir,"DE_prod_ranked.csv"), sep="\t", index_col = False)
+DE_d7_ranked = pd.read_csv(os.path.join(results_dir,"DE_d7_ranked.csv"), sep="\t", index_col = False)
+DE_d28_ranked = pd.read_csv(os.path.join(results_dir,"DE_d28_ranked.csv"), sep="\t", index_col = False)
 
-    # 6. GSEA analysis
-    print(f"Genes for GSEA: {len(ranked_dict)}")
-
-    # 6.1. KEGG GSEA
-    print(f"\nGSEA for KEGG")
-    kegg_gsea = gp.prerank(
-    rnk= ranked_df, 
-    gene_sets='KEGG_2021_Human',
-    outdir=os.path.join(results_dir, "gsea_results", 'dataset_KEGG'),
-    permutation_num=1000,
-    seed=42,
-    verbose=True
-)   
+def run_gsea_public_databases(DE_results, out_base_dir, timepoint):
+    df = DE_results.copy()
+    df = df.drop_duplicates(subset='gene', keep='first').copy()
+        
+    # We add micro-noise and sort (from the highest LFC among responders to the lowest)
+    np.random.seed(42)
+    noise = np.random.normal(0, 1e-9, size=len(df))
+    df['rank_metric'] = df['log2FoldChange'] + noise
+    df = df.sort_values('rank_metric', ascending=False)
+        
+    rnk_input = df[['gene', 'rank_metric']]
     
-    # 6.2. GO Biological Process GSEA
-    print(f"\nGSEA for GO Biological Process")
-    go_gsea = gp.prerank(
-    rnk=ranked_df,
-    gene_sets='GO_Biological_Process_2021',
-    outdir=os.path.join(results_dir, "gsea_results", '_GO_BP'),
-    permutation_num=1000,
-    seed=42, verbose=True
-)
-'''
+    # Список баз данных, по которым запускаем анализ
+    public_sets = ['KEGG_2021_Human', 'GO_Biological_Process_2021']
+    
+    for db in public_sets:
+        out_dir = os.path.join(out_base_dir, f"GSEA_{db}_{timepoint}")
+        os.makedirs(out_dir, exist_ok=True)
+        
+        print(f"Running GSEA prerank for {timepoint} using {db}...")
+        pr = gp.prerank(
+            rnk=rnk_input,
+            gene_sets=db,  # database
+            outdir=out_dir,
+            permutation_num=1000,
+            min_size=15,   # for big db higher
+            max_size=500,
+            seed=42, verbose=True
+        )
+        
+        # Filter significant (FDR < 0.05)
+        significant_terms = pr.res2d[pr.res2d['FDR q-val'] < 0.05]
+        significant_terms.to_csv(
+            os.path.join(out_dir, f"significant_results_{db}_{timepoint}.tsv"), 
+            sep="\t", index=False
+        )
 
+base_output = os.path.join(results_dir, "public_gsea_results")
+
+# Positive NES have responders, negative — nonresponders
+run_gsea_public_databases(DE_prod_ranked, base_output, "product")
+run_gsea_public_databases(DE_d7_ranked, base_output, "d7")
+run_gsea_public_databases(DE_d28_ranked, base_output, "d28")
 
 #%%
-# 8. Crating and processing gene panels
+# 8. Creating and processing gene panels
 gp_1 = pd.read_csv(os.path.join(dir_raw, "gene_panel_1.csv"))
 gp_2 = pd.read_csv(os.path.join(dir_raw, "gene_panel_2.csv"))
 gp_3 = pd.read_csv(os.path.join(dir_raw, "gene_panel_3.csv"))
@@ -614,27 +628,58 @@ panels.update(panels_dict_3)
 panels.update(panels_dict_4)
 
 # %%
-# 9. GSEA - 4 gene panels
-DE_prod_ranked = pd.read_csv(os.path.join(results_dir,"DE_prod_ranked.csv"), sep="\t", index_col = False)
-DE_d7_ranked = pd.read_csv(os.path.join(results_dir,"DE_d7_ranked.csv"), sep="\t", index_col = False)
-DE_28_ranked = pd.read_csv(os.path.join(results_dir,"DE_d28_ranked.csv"), sep="\t", index_col = False)
-# %%
+# 9. ranked GSEA (use DE results of each timepoint) for 4 gene panels
 
-out_dir = os.path.join(results_dir, 'results_gsea_rk')
-os.makedirs(out_dir, exist_ok=True)
+# function for prerank per one group comparisan
+def run_group_prerank(DE_results, panels, out_dir):
+    df = DE_results.copy()
+    df = df.drop_duplicates(subset='gene', keep='first').copy()
+    
+    # We add micro-noise and sort (from the highest LFC among responders to the lowest)
+    np.random.seed(42)
+    noise = np.random.normal(0, 1e-9, size=len(df))
+    df['rank_metric'] = df['log2FoldChange'] + noise
+    df = df.sort_values('rank_metric', ascending=False)
+    
+    rnk_input = df[['gene', 'rank_metric']]
+    
+    pr = gp.prerank(
+        rnk=rnk_input,
+        gene_sets=panels,  
+        outdir=out_dir,
+        permutation_num=1000,
+        min_size=3,
+        max_size=500,
+        seed=42
+    )
+    # Results (NES, p-value)
+    return pr.res2d
 
-pr = gp.prerank(
-    rnk= DE_prod_ranked,
-    gene_sets = panels,  
-    outdir= out_dir,
-    permutation_num=1000,
-    min_size=3,
-    max_size=500,
-    seed=42
+
+res_prod = run_group_prerank(
+    DE_prod_ranked, 
+    panels=panels, 
+    out_dir=os.path.join(results_dir, 'GSEA_rank_groups_product')
 )
 
-# %%
-# 10. ssGSEA - 4 gene panels
+res_d7 = run_group_prerank(
+    DE_d7_ranked, 
+    panels=panels, 
+    out_dir=os.path.join(results_dir, 'GSEA_rank_groups_d7')
+)
+
+res_d28 = run_group_prerank(
+    DE_d28_ranked, 
+    panels=panels, 
+    out_dir=os.path.join(results_dir, 'GSEA_rank_groups_d28')
+)
+
+# Positive NES have responders, negative — nonresponders
+print(res_prod[['Term', 'NES', 'NOM p-val', 'FDR q-val']].head())
+
+#%%
+# 10. ssGSEA - 4 gene panels per each sample (without DE, need to compare responders with nonresponders)
+# all expression matrix icluding 3 and 4 group (as works per one sample)
 expr_all = pd.read_csv(os.path.join(dir_proc, "expr_all_vst.tsv"), index_col=0, sep="\t")
 gene_sets = panels
 
@@ -650,9 +695,9 @@ ss = gp.ssgsea(
     max_size=500,
     seed=42
 )
+#%%
 
-# Compare responders vs nonresponders
-scores_raw = pd.read_csv(os.path.join(results_dir, "results_gsea", "gseapy_report.csv"), sep=",")
+scores_raw = pd.read_csv(os.path.join(results_dir, "results_gsea", "gseapy.gene_set.ssgsea.report.csv"), sep=",")
 
 scores_wide = scores_raw.pivot_table(
     index="Name",
@@ -661,22 +706,37 @@ scores_wide = scores_raw.pivot_table(
 )
 # scores_wide: samples × subpopulations
 scores_all = scores_wide
+#%%
+# Compare responders vs nonresponders
+# remove 3 and 4 groups per test
+scores_known = scores_all.loc[
+    meta_all["group_analysis_1"].isin(["responder", "nonresponder"])
+]
+
+scores_known.to_csv(os.path.join(results_dir, "results_gsea", "scores_known.csv"))
+
+scores_unknown = scores_all.loc[
+    meta_all["group_analysis_2"].isin(["3", "4"])
+]
+
+scores_unknown.to_csv(os.path.join(results_dir, "results_gsea", "scores_unknown.csv"))
 
 # subset per each timepoint
-meta_prod = meta[meta["timepoint"] == "product"].copy()
-common_prod = sorted(set(meta_prod.index) & set(scores_all.index))
+
+meta_prod = meta_all[meta_all["timepoint"] == "product"].copy()
+common_prod = sorted(set(meta_prod.index) & set(scores_known.index))
 meta_prod = meta_prod.loc[common_prod]
-scores_prod = scores_all.loc[common_prod]
+scores_prod = scores_known.loc[common_prod]
 
-meta_d7 = meta[meta["timepoint"] == "d7 after"].copy()
-common_d7 = sorted(set(meta_d7.index) & set(scores_all.index))
+meta_d7 = meta_all[meta_all["timepoint"] == "d7 after"].copy()
+common_d7 = sorted(set(meta_d7.index) & set(scores_known.index))
 meta_d7 = meta_d7.loc[common_d7]
-scores_d7 = scores_all.loc[common_d7]
+scores_d7 = scores_known.loc[common_d7]
 
-meta_d28 = meta[meta["timepoint"] == "d28 after"].copy()
-common_d28 = sorted(set(meta_d28.index) & set(scores_all.index))
+meta_d28 = meta_all[meta_all["timepoint"] == "d28 after"].copy()
+common_d28 = sorted(set(meta_d28.index) & set(scores_known.index))
 meta_d28 = meta_d28.loc[common_d28]
-scores_d28 = scores_all.loc[common_d28]
+scores_d28 = scores_known.loc[common_d28]
 
 # Test - compare responders with nonresponders
 
@@ -704,22 +764,13 @@ def test_respvsnonresp(meta_df, scores_df, timepoint=None):
     df_results = df_results.sort_values("p_value")
 
     df_results.to_csv(os.path.join(results_dir, f"GSEA_4panel_res_{timepoint}.csv"),
-                      sep="\t", header=False)
+                      sep="\t")
 
     return df_results
 
-gsea_respan_prod = test_respvsnonresp(meta_prod, scores_prod, timepoint=None)
-gsea_respan_d7 = test_respvsnonresp(meta_d7, scores_d7, timepoint=None)
-gsea_respan_d28 = test_respvsnonresp(meta_d28, scores_d28, timepoint=None)
+gsea_respan_prod = test_respvsnonresp(meta_prod, scores_prod, timepoint="product")
+gsea_respan_d7 = test_respvsnonresp(meta_d7, scores_d7, timepoint="d7")
+gsea_respan_d28 = test_respvsnonresp(meta_d28, scores_d28, timepoint="d28")
 
 # %%
-# Visualization of gsea results
-
-# Dynamics
-
-# ML??
-
-#%%
-
-
-# %%
+# Visualization of GSEA results
