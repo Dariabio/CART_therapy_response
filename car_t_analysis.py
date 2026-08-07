@@ -15,6 +15,9 @@ import seaborn as sns
 from scipy.stats import chi2_contingency
 from scipy.stats import ttest_ind
 import gseapy as gp
+from scipy.stats import mannwhitneyu
+from statsmodels.stats.multitest import multipletests
+from scipy.stats import zscore
 
 #%%
 
@@ -713,14 +716,17 @@ scores_known = scores_all.loc[
     meta_all["group_analysis_1"].isin(["responder", "nonresponder"])
 ]
 
-scores_known.to_csv(os.path.join(results_dir, "results_gsea", "scores_known.csv"))
-
 scores_unknown = scores_all.loc[
     meta_all["group_analysis_2"].isin(["3", "4"])
 ]
 
-scores_unknown.to_csv(os.path.join(results_dir, "results_gsea", "scores_unknown.csv"))
+# saving for calculating dynamics
 
+
+scores_all.to_csv(os.path.join(results_dir, "results_gsea", "scores_all.csv"))
+scores_known.to_csv(os.path.join(results_dir, "results_gsea", "scores_known.csv"))
+scores_unknown.to_csv(os.path.join(results_dir, "results_gsea", "scores_unknown.csv"))
+meta_all.to_csv(os.path.join(dir_proc, "meta_all.csv"))
 # subset per each timepoint
 
 meta_prod = meta_all[meta_all["timepoint"] == "product"].copy()
@@ -738,7 +744,8 @@ common_d28 = sorted(set(meta_d28.index) & set(scores_known.index))
 meta_d28 = meta_d28.loc[common_d28]
 scores_d28 = scores_known.loc[common_d28]
 
-# Test - compare responders with nonresponders
+#%%
+# Test - compare responders with nonresponders ssGSEA results
 
 def test_respvsnonresp(meta_df, scores_df, timepoint=None):
     meta = meta_df.copy()
@@ -749,19 +756,35 @@ def test_respvsnonresp(meta_df, scores_df, timepoint=None):
         resp = scores.loc[meta["group_analysis_1"] == "responder", col]
         nonresp = scores.loc[meta["group_analysis_1"] == "nonresponder", col]
     
-        if len(resp) == 0 or len(nonresp) == 0:
+        if len(resp) < 2 or len(nonresp) < 2:
+            continue
+
+        if resp.std() == 0 and nonresp.std() == 0:
             continue
     
-        t, p = ttest_ind(resp, nonresp)
+
+        stat, p = mannwhitneyu(
+            resp, nonresp, alternative="two-sided"
+        )
+
         results.append({
-        "subpopulation": col,
-        "p_value": p,
-        "mean_resp": resp.mean(),
-        "mean_nonresp": nonresp.mean()
+            "subpopulation": col,
+            "p_value": p,
+            "mean_resp": resp.mean(),
+            "mean_nonresp": nonresp.mean(),
+            "median_resp": resp.median(),  # Для Манна-Уитни полезно выводить медианы
+            "median_nonresp": nonresp.median(),
         })
 
     df_results = pd.DataFrame(results)
-    df_results = df_results.sort_values("p_value")
+    
+    reject, fdr_corrected, _, _ = multipletests(
+        df_results["p_value"], alpha=0.1, method="fdr_bh"
+    )
+    df_results["FDR"] = fdr_corrected
+
+    # Сортируем по возрастанию FDR, а затем по p_value
+    df_results = df_results.sort_values(by=["FDR", "p_value"])
 
     df_results.to_csv(os.path.join(results_dir, f"GSEA_4panel_res_{timepoint}.csv"),
                       sep="\t")
@@ -773,4 +796,313 @@ gsea_respan_d7 = test_respvsnonresp(meta_d7, scores_d7, timepoint="d7")
 gsea_respan_d28 = test_respvsnonresp(meta_d28, scores_d28, timepoint="d28")
 
 # %%
-# Visualization of GSEA results
+# Vizualization of GSEA results
+# ssGSEA results - PCA by each point
+# ssGSEA results - heatmap (all 4 gene panels) by each point
+
+def pca_ssgsea(scores_df, meta_df, timepoint=None):
+    scores_plot = scores_df.copy()
+
+    # 1. PCA plot
+
+    pca = PCA(n_components=2)
+
+    pcs = pca.fit_transform(scores_plot)
+
+    pca_df = pd.DataFrame(
+    pcs,
+    columns=["PC1","PC2"],
+    index=scores_plot.index)
+
+    meta_pca = meta_df.copy()
+    pca_df = pca_df.join(meta_pca)
+
+    plt.figure(figsize=(8,6))
+
+    sns.scatterplot(
+    data=pca_df,
+    x="PC1",
+    y="PC2",
+    hue="group_analysis_1",
+    style="timepoint",
+    s=120
+)
+
+    # Add patient ids
+    for patient_id, row in pca_df.iterrows():
+        plt.text(
+                row["PC1"],  
+                row["PC2"], 
+                str(row["patient_id"]), 
+                fontsize=8,        
+                alpha=0.8,         
+                weight="semibold" 
+            )
+
+    plt.xlabel(
+    f"PC1 ({100*pca.explained_variance_ratio_[0]:.1f}%)"
+)
+
+    plt.ylabel(
+    f"PC2 ({100*pca.explained_variance_ratio_[1]:.1f}%)"
+)
+
+    plt.tight_layout()
+
+    plt.savefig(
+    os.path.join(figures_dir,f"PCA_{timepoint}_ssGSEA.png"),
+    dpi=300
+)
+    plt.show()
+
+    # 2. Heatmap
+
+    scores_z = scores_df.copy()
+
+    scores_z = scores_z.apply(
+    zscore,
+    axis=0)
+
+    meta_hm = meta_df.copy()
+
+    # sort by annotation
+    sorted_index = meta_hm.sort_values(by="group_analysis_1").index
+    scores_z = scores_z.loc[sorted_index]
+    meta_hm = meta_hm.loc[sorted_index]
+
+    new_labels = meta_hm["patient_id"]
+    scores_z.index = new_labels
+    meta_hm.index = new_labels
+
+    row_colors = pd.DataFrame({
+        "Response": meta_hm["group_analysis_1"].map({
+            "responder":"red",
+            "nonresponder":"blue"
+        })
+    }, index=scores_z.index)
+
+    g = sns.clustermap(
+        scores_z,
+        cmap="RdBu_r",
+        center=0,
+        col_cluster=False,
+        row_cluster=False, # Set to False to keep strict sorting without tree reordering
+        row_colors=row_colors,
+        figsize=(12,10),
+        xticklabels=True,
+        yticklabels=True
+    )
+
+    plt.setp(g.ax_heatmap.get_xticklabels(), fontsize=8, rotation=90)
+    
+    plt.setp(g.ax_heatmap.get_yticklabels(), fontsize=15, rotation=0)
+
+    plt.savefig(
+    os.path.join(
+        figures_dir,
+        f"Heatmap_ssGSEA_{timepoint}.png"
+    ),
+    dpi=300
+)
+
+    plt.show()
+
+# pca and heatmap ssGSEA
+pca_ssgsea(scores_prod, meta_prod, timepoint="product")
+pca_ssgsea(scores_d7, meta_d7, timepoint="d7")
+pca_ssgsea(scores_d28, meta_d28, timepoint="d28")
+
+# %%
+# ssGSEA - comparison between resp vs unresp
+# product as the first point
+
+# Сначала собираем ваши результаты по всем трем точкам в один словарь для удобного поиска в цикле
+gsea_results_dict = {
+    "product": gsea_respan_prod,
+    "d7 after": gsea_respan_d7,   
+    "d28 after": gsea_respan_d28   
+}
+
+# Из "product" (как в вашем исходном коде) берем топ-10 сигнатур для визуализации
+top_signatures = (
+    gsea_respan_prod
+    .sort_values("p_value")
+    .head(10)
+    ["subpopulation"]
+)
+
+# Список, в который мы запишем финальный отчет по нарисованным графикам
+plots_log = []
+
+for sig in top_signatures:
+    for tp in [
+        "product",
+        "d7 after",
+        "d28 after"
+    ]:
+        # 1. Достаем готовую таблицу результатов для текущей временной точки
+        current_gsea_res = gsea_results_dict.get(tp)
+        if current_gsea_res is None or current_gsea_res.empty:
+            continue
+            
+        # 2. Ищем строку для нашей текущей сигнатуры (sig)
+        sig_stats = current_gsea_res[current_gsea_res["subpopulation"] == sig]
+        if sig_stats.empty:
+            continue
+            
+        # Вытаскиваем посчитанные вашей функцией p-value и FDR
+        p_val = sig_stats["p_value"].values[0]
+        fdr_val = sig_stats["FDR"].values[0]
+
+        # КРИТИЧЕСКИЙ ШАГ: Если p-value в этой временной точке >= 0.05, график НЕ строим
+        if p_val >= 0.05:
+            continue
+
+        # 3. Находим образцы и строим DataFrame для графика
+        samples_tp = meta_all[meta_all["timepoint"] == tp].index
+        common = scores_all.index[scores_all.index.isin(samples_tp)]
+
+        if len(common) == 0:
+            continue
+
+        plot_df = pd.DataFrame({
+            "score": scores_all.loc[common, sig],
+            "group": meta_all.loc[common, "group_analysis_1"]
+        })
+
+        plot_df = plot_df[
+            plot_df["group"].isin(["responder", "nonresponder"])
+        ]
+
+        if plot_df.empty:
+            continue
+
+        # 4. Если проверка пройдена, добавляем информацию в итоговую табличку графиков
+        plots_log.append({
+            "Signature": sig,
+            "Timepoint": tp,
+            "p_value": p_val,
+            "FDR": fdr_val,
+            "File_Name": f"Boxplot_{sig}_{tp}.png"
+        })
+
+        # 5. Отрисовка boxplot
+        plt.figure(figsize=(5, 4))
+        target_order = ["responder", "nonresponder"]
+        
+        sns.boxplot(
+            data=plot_df,
+            x="group",
+            y="score",
+            order=target_order
+        )
+
+        sns.stripplot(
+            data=plot_df,
+            x="group",
+            y="score",
+            color="black",
+            size=6,
+            order=target_order,
+            jitter=0.2
+        )
+
+        # Выводим в заголовок оригинальный p-value из вашей таблицы
+        plt.title(f"{sig}\n{tp} (p-val: {p_val:.4f})")
+        plt.tight_layout()
+
+        os.makedirs(os.path.join(figures_dir, "ssGSEA"), exist_ok=True)
+
+        plt.savefig(
+            os.path.join(
+                figures_dir, "ssGSEA",
+                f"Boxplot_{sig}_{tp}.png"
+            ),
+            dpi=300
+        )
+
+        plt.close()
+
+# --- СОХРАНЕНИЕ СВОДНОЙ ТАБЛИЦЫ ВЫПЛУНУТЫХ ГРАФИКОВ ---
+if plots_log:
+    df_plots_log = pd.DataFrame(plots_log)
+    df_plots_log = df_plots_log.sort_values(by="p_value")
+    
+    # Сохраняем отчет (только по тем парам, для которых создались графики)
+    summary_path = os.path.join(figures_dir, "ssGSEA", "generated_plots_summary.csv")
+    df_plots_log.to_csv(summary_path, index=False, sep="\t")
+
+# %%
+# ranked GSEA 4 panels
+nes_prod = pd.to_numeric(res_prod.set_index("Term")["NES"], errors='coerce')
+nes_d7 = pd.to_numeric(res_d7.set_index("Term")["NES"], errors='coerce')
+nes_d28 = pd.to_numeric(res_d28.set_index("Term")["NES"], errors='coerce')
+
+# Объединяем в матрицу
+nes_mat = pd.concat(
+    [
+        nes_prod.rename("product"),
+        nes_d7.rename("d7"),
+        nes_d28.rename("d28")
+    ],
+    axis=1
+)
+
+# Заполняем пропуски нулями (если термины не совпадают между таймпоинтами)
+# Для NES (Normalized Enrichment Score) ноль означает отсутствие обогащения
+nes_mat = nes_mat.fillna(0)
+
+# Строим кластерную карту
+sns.clustermap(
+    nes_mat,
+    cmap="RdBu_r",
+    center=0,
+    figsize=(12, 35),
+    col_cluster=False
+)
+
+plt.savefig(
+    os.path.join(figures_dir, "NES_timepoints_heatmap.png"),
+    dpi=300
+)
+
+plt.show()
+# %%
+# significant NES in responders and nonresponders ranked GSEA (4 panels)
+
+def get_best(res_df, fdr=0.05):
+    res = res_df.copy()
+
+    # Приводим к float, чтобы сохранить дробную часть p-value и NES
+    num_col = ["FDR q-val", "NES"]
+    res[num_col] = res[num_col].astype(float)
+
+    # Фильтруем: оставляем ВСЕ строки, где FDR меньше заданного порога
+    sig = res[res["FDR q-val"] < fdr].copy()
+
+    # Разделяем на положительные и отрицательные NES
+    # И сортируем их для удобства (лучшие по NES и FDR будут сверху)
+    pos = sig[sig["NES"] > 0].sort_values(
+        ["NES", "FDR q-val"], 
+        ascending=[False, True]
+    )
+    
+    neg = sig[sig["NES"] < 0].sort_values(
+        ["NES", "FDR q-val"], 
+        ascending=[True, True]
+    )
+
+    # Функция теперь возвращает два полноценных DataFrame
+    return pos, neg
+
+
+prod_pos, prod_neg = get_best(res_prod)
+
+d7_pos, d7_neg = get_best(res_d7)
+
+d28_pos, d28_neg = get_best(res_d28)
+
+# make panel of these pictures
+# %%
+
+
