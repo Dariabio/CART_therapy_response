@@ -59,7 +59,7 @@ plot_groups = [
 scores_all = pd.read_csv(
     os.path.join(
         results_dir,
-        "results_gsea",
+        "results_ssgsea",
         "scores_all.csv"
     ),
     index_col=0
@@ -602,7 +602,7 @@ def delta_effect_heatmap(
         values="p_adj"
     )
 
-
+    '''
     # сортировка по силе эффекта
     order = (
         mat.abs()
@@ -613,6 +613,7 @@ def delta_effect_heatmap(
 
     mat = mat.loc[order]
     pmat = pmat.loc[order]
+    '''
 
 
     cols = ["delta_d7", "delta_d28"]
@@ -620,10 +621,47 @@ def delta_effect_heatmap(
     mat = mat.reindex(columns=cols)
     pmat = pmat.reindex(columns=cols)
 
+    # Determine panel for each signature
+    panel_info = pd.DataFrame(index=mat.index)
+
+    panel_info["panel"] = (
+        panel_info.index
+        .astype(str)
+        .str.extract(r"^(P[1-4])_", expand=False)
+    )
+
+    panel_order = {
+        "P1": 1,
+        "P2": 2,
+        "P3": 3,
+        "P4": 4
+    }
+
+    panel_info["panel_order"] = (
+        panel_info["panel"]
+        .map(panel_order)
+    )
+
+    # sort signatures
+    panel_info["max_abs_effect"] = (
+        mat
+        .abs()
+        .max(axis=1, skipna=True)
+    )
+
+    panel_info = panel_info.sort_values(
+        ["panel_order", "max_abs_effect"],
+        ascending=[True, False]
+    )
+
+    ordered_signatures = panel_info.index
+
+    mat = mat.loc[ordered_signatures]
+    pmat = pmat.reindex(ordered_signatures)
 
 
     fig, ax = plt.subplots(
-        figsize=(7, max(6, len(mat)*0.35))
+        figsize=(7, max(8, len(mat)*0.30))
     )
 
 
@@ -672,7 +710,22 @@ def delta_effect_heatmap(
                 fontweight="bold"
             )
 
+    # Add horizontal lines between panels
+    
 
+    panel_sequence = panel_info["panel"].values
+
+    boundaries = np.where(
+        panel_sequence[1:] != panel_sequence[:-1]
+    )[0] + 1
+
+    for boundary in boundaries:
+        ax.axhline(
+            boundary,
+            color="black",
+            linewidth=1.5
+        )
+    
     ax.set_title(
         "Delta effect size\nResponder - Nonresponder"
     )
@@ -701,6 +754,7 @@ def delta_effect_heatmap(
     )
 
     plt.close()
+    
 delta_effect_heatmap(
     delta_results,
     figures_dir
@@ -958,4 +1012,242 @@ for signature in interesting_signatures:
 
     plt.close()
 # %%
+# ============================================================
+# FINAL SUMMARY TABLE
+# ============================================================
 
+# ------------------------------------------------------------
+# 1. Interaction results
+# ------------------------------------------------------------
+
+interaction_summary = interaction.copy()
+
+# Берем только два нужных interaction:
+# product -> d7
+# product -> d28
+
+interaction_d7 = interaction_summary[
+    interaction_summary["term"] ==
+    "C(timepoint)[T.d7 after]:C(plot_group)[T.responder]"
+].copy()
+
+interaction_d28 = interaction_summary[
+    interaction_summary["term"] ==
+    "C(timepoint)[T.d28 after]:C(plot_group)[T.responder]"
+].copy()
+
+
+interaction_d7 = interaction_d7[
+    ["signature", "coef", "p_adj"]
+].rename(
+    columns={
+        "coef": "interaction_d7",
+        "p_adj": "FDR_interaction_d7"
+    }
+)
+
+interaction_d28 = interaction_d28[
+    ["signature", "coef", "p_adj"]
+].rename(
+    columns={
+        "coef": "interaction_d28",
+        "p_adj": "FDR_interaction_d28"
+    }
+)
+
+
+# ------------------------------------------------------------
+# 2. Delta results
+# ------------------------------------------------------------
+
+delta_summary = delta_results.copy()
+
+delta_d7 = delta_summary[
+    delta_summary["delta"] == "delta_d7"
+].copy()
+
+delta_d28 = delta_summary[
+    delta_summary["delta"] == "delta_d28"
+].copy()
+
+
+# delta_results уже содержит:
+# resp_mean
+# nonresp_mean
+# effect_size
+# p_adj
+
+delta_d7 = delta_d7[
+    [
+        "signature",
+        "resp_mean",
+        "nonresp_mean",
+        "effect_size",
+        "p_adj"
+    ]
+].rename(
+    columns={
+        "resp_mean": "delta_resp_d7",
+        "nonresp_mean": "delta_nonresp_d7",
+        "effect_size": "delta_effect_d7",
+        "p_adj": "FDR_delta_d7"
+    }
+)
+
+delta_d28 = delta_d28[
+    [
+        "signature",
+        "resp_mean",
+        "nonresp_mean",
+        "effect_size",
+        "p_adj"
+    ]
+].rename(
+    columns={
+        "resp_mean": "delta_resp_d28",
+        "nonresp_mean": "delta_nonresp_d28",
+        "effect_size": "delta_effect_d28",
+        "p_adj": "FDR_delta_d28"
+    }
+)
+
+
+# ------------------------------------------------------------
+# 3. Merge everything
+# ------------------------------------------------------------
+
+final_summary = (
+    interaction_d7
+    .merge(
+        interaction_d28,
+        on="signature",
+        how="outer"
+    )
+    .merge(
+        delta_d7,
+        on="signature",
+        how="outer"
+    )
+    .merge(
+        delta_d28,
+        on="signature",
+        how="outer"
+    )
+)
+
+
+# ------------------------------------------------------------
+# 4. Sort by most interesting signals
+# ------------------------------------------------------------
+
+# Минимальный FDR из всех longitudinal tests
+
+fdr_cols = [
+    "FDR_interaction_d7",
+    "FDR_interaction_d28",
+    "FDR_delta_d7",
+    "FDR_delta_d28"
+]
+
+final_summary["best_FDR"] = (
+    final_summary[fdr_cols]
+    .min(axis=1)
+)
+
+final_summary = final_summary.sort_values(
+    "best_FDR"
+)
+
+
+# ------------------------------------------------------------
+# 5. Add significance flags
+# ------------------------------------------------------------
+
+final_summary["significant_d7"] = (
+    (final_summary["FDR_interaction_d7"] < 0.05) |
+    (final_summary["FDR_delta_d7"] < 0.05)
+)
+
+final_summary["significant_d28"] = (
+    (final_summary["FDR_interaction_d28"] < 0.05) |
+    (final_summary["FDR_delta_d28"] < 0.05)
+)
+
+
+# ------------------------------------------------------------
+# 6. Save
+# ------------------------------------------------------------
+
+final_summary.to_csv(
+    os.path.join(
+        tables_dir,
+        "FINAL_signature_longitudinal_summary.tsv"
+    ),
+    sep="\t",
+    index=False
+)
+
+
+print("\n==========================================")
+print("FINAL LONGITUDINAL SUMMARY")
+print("==========================================")
+
+print(
+    final_summary[
+        [
+            "signature",
+            "interaction_d7",
+            "FDR_interaction_d7",
+            "delta_resp_d7",
+            "delta_nonresp_d7",
+            "delta_effect_d7",
+            "FDR_delta_d7",
+            "interaction_d28",
+            "FDR_interaction_d28",
+            "delta_resp_d28",
+            "delta_nonresp_d28",
+            "delta_effect_d28",
+            "FDR_delta_d28"
+        ]
+    ].to_string(index=False)
+)
+
+def classify_signal(row):
+
+    # Сильный longitudinal signal
+    if (
+        pd.notna(row["FDR_interaction_d28"])
+        and row["FDR_interaction_d28"] < 0.05
+    ):
+        if row["interaction_d28"] > 0:
+            return "Higher trajectory in responders"
+        else:
+            return "Higher trajectory in nonresponders"
+
+    # Если interaction не значим, смотрим delta
+    if (
+        pd.notna(row["FDR_delta_d28"])
+        and row["FDR_delta_d28"] < 0.05
+    ):
+        if row["delta_effect_d28"] > 0:
+            return "Greater increase in responders"
+        else:
+            return "Greater increase in nonresponders"
+
+    # Тренд
+    if (
+        pd.notna(row["FDR_interaction_d28"])
+        and row["FDR_interaction_d28"] < 0.10
+    ):
+        if row["interaction_d28"] > 0:
+            return "Trend: higher trajectory in responders"
+        else:
+            return "Trend: higher trajectory in nonresponders"
+
+    return "No significant longitudinal difference"
+
+
+final_summary["interpretation"] = final_summary.apply(
+    classify_signal,
+    axis=1
+)

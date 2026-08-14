@@ -18,6 +18,8 @@ import gseapy as gp
 from scipy.stats import mannwhitneyu
 from statsmodels.stats.multitest import multipletests
 from scipy.stats import zscore
+from matplotlib.colors import TwoSlopeNorm, Normalize
+
 
 #%%
 
@@ -32,8 +34,7 @@ dir_raw = os.path.join(project_dir, "data", "raw")
 dir_proc = os.path.join(project_dir, "data", "processed")
 #%%
 # 1. Merging all samples in one matrix expression
-# tpm for GSEA ?
-# raw counts for PCA and deseq2
+# raw counts
 folder = (os.path.join(dir_raw, "data_expression"))
 pattern = os.path.join(folder, "*.tsv")
 files = sorted(glob.glob(pattern))
@@ -71,8 +72,6 @@ merged.to_csv(os.path.join(dir_raw, "expression_raw.tsv"), sep="\t")
 
 # 2. Preprocess data
 # Annotation and filtering
-
-#%%
 expression = pd.read_csv(os.path.join(dir_raw, "expression_raw.tsv"), sep="\t")
 expression_tpm = pd.read_csv(os.path.join(dir_raw, "expression_tpm.tsv"), sep="\t")
 
@@ -167,10 +166,10 @@ expression_tpm.to_csv(os.path.join(dir_raw, "expression_tpm_ann.tsv"), sep="\t")
 expression.to_csv(os.path.join(dir_raw, "expression_raw_ann.tsv"), sep="\t")
 
 #%%
+# 3. Check matching between expression and clinical data
 expression = pd.read_csv(os.path.join(dir_raw, "expression_raw_ann.tsv"), index_col=0, sep="\t")
 print("i love ryazhenka <3")
 
-# 3. Check matching between expression and clinical data
 info_cart = pd.read_csv(os.path.join(dir_raw,"clinical_data.csv"))
 # _ in patient_id
 info_cart["sample_id"] = info_cart["sample_id"].str.replace(" ", "_")
@@ -204,31 +203,98 @@ meta["timepoint"] = meta["timepoint"].astype(str)
 meta["patient_id"] = meta["patient_id"].astype(str)
 
 # correlation between batch_nexp and batch_seq to choose batch
-tab = pd.crosstab(meta["batch_nexp"], meta["batch_seq"])
-chi2, p, dof, expected = chi2_contingency(tab)
-print("Chi2:", chi2)
-print("p-value:", p)
-print("df:", dof)
+def check_categorical_association(meta, factor1, factor2):
+    
+    tab = pd.crosstab(
+        meta[factor1],
+        meta[factor2]
+    )
 
-# Cramér's V
-n = tab.values.sum()
-phi2 = chi2 / n
-r, k = tab.shape
-phi2corr = max(0, phi2 - ((k-1)*(r-1))/(n-1))
-V = np.sqrt(phi2corr / min(k-1, r-1))
-print("Cramér's V:", V)
+    chi2, p, dof, expected = chi2_contingency(tab)
+
+    n = tab.values.sum()
+
+    phi2 = chi2 / n
+    r, k = tab.shape
+
+    if min(r, k) > 1:
+        phi2corr = max(
+            0,
+            phi2 - ((k - 1) * (r - 1)) / (n - 1)
+        )
+
+        V = np.sqrt(
+            phi2corr / min(k - 1, r - 1)
+        )
+    else:
+        V = np.nan
+
+    print("\n===================================")
+    print(f"{factor1} vs {factor2}")
+    print("===================================")
+    print("Chi2:", chi2)
+    print("p-value:", p)
+    print("df:", dof)
+    print("Cramér's V:", V)
+
+    return tab, p, V
+# batch_nexp vs batch_seq
+tab, p, V = check_categorical_association(
+    meta,
+    "batch_nexp",
+    "batch_seq"
+)
+
 plt.figure(figsize=(6, 4))
+
 sns.heatmap(
     tab,
     annot=True,
     fmt="d",
     cmap="Blues"
 )
+
 plt.xlabel("batch_seq")
 plt.ylabel("batch_nexp")
+
 plt.tight_layout()
 plt.show()
 
+check_categorical_association(
+    meta,
+    "batch_nexp",
+    "group_analysis_1"
+)
+
+check_categorical_association(
+    meta,
+    "batch_seq",
+    "group_analysis_1"
+)
+
+check_categorical_association(
+    meta,
+    "batch_nexp",
+    "timepoint"
+)
+
+check_categorical_association(
+    meta,
+    "batch_seq",
+    "timepoint"
+)
+
+#%%
+#after classification
+meta_new = meta.copy()
+counts_new = counts.copy()
+# Если в group_analysis_2 стоит 4, пишем "nonresponder", иначе оставляем старое значение
+meta_new['group_analysis_1'] = np.where(meta_new['group_analysis_2'] == "4", 
+                                        "nonresponder", 
+                                        meta_new['group_analysis_1'])
+meta_new['group_analysis_1'] = np.where(meta_new['group_analysis_2'] == "3", 
+                                        "responder", 
+                                        meta_new['group_analysis_1'])
 #%%
 
 #4. DESeq2 without 3 and 4 group
@@ -275,7 +341,8 @@ pc_df = pd.DataFrame(
 
 
 #5. PCA plots
-#  group_analysis_1
+
+#5.1. group_analysis_1
 plt.figure(figsize=(6, 5))
 sns.scatterplot(
     data=pc_df,
@@ -304,7 +371,7 @@ plt.tight_layout()
 plt.savefig(os.path.join(figures_dir, "pca_group2.png"), bbox_inches='tight', dpi=300)
 plt.show()
 
-
+#5.2. group_analysis_1 and timepoint
 plt.figure(figsize=(6, 5))
 sns.scatterplot(
     data=pc_df,
@@ -320,6 +387,7 @@ plt.tight_layout()
 plt.savefig(os.path.join(figures_dir, "pca_timepoint_group1.png"), bbox_inches='tight', dpi=300)
 plt.show()
 
+#5.3. group_analysis_2 and timepoint
 plt.figure(figsize=(6, 5))
 sns.scatterplot(
     data=pc_df,
@@ -335,6 +403,7 @@ plt.tight_layout()
 plt.savefig(os.path.join(figures_dir, "pca_timepoint_group2.png"), bbox_inches='tight', dpi=300)
 plt.show()
 
+#5.4. patient_id
 plt.figure(figsize=(8, 6))
 sns.scatterplot(
     data=pc_df,
@@ -349,6 +418,7 @@ plt.tight_layout()
 plt.savefig(os.path.join(figures_dir, "pca_patient_id.png"), bbox_inches='tight', dpi=300)
 plt.show()
 
+#5.5. batch_nexp
 plt.figure(figsize=(6, 5))
 sns.scatterplot(
     data=pc_df,
@@ -362,6 +432,7 @@ plt.tight_layout()
 plt.savefig(os.path.join(figures_dir, "pca_nbatch.png"), bbox_inches='tight', dpi=300)
 plt.show()
 
+#5.6. batch_seq
 plt.figure(figsize=(6, 5))
 sns.scatterplot(
     data=pc_df,
@@ -375,7 +446,76 @@ plt.tight_layout()
 plt.savefig(os.path.join(figures_dir, "pca_seqbatch.png"), bbox_inches='tight', dpi=300)
 plt.show()
 
-# by timepoint
+#5.7 by timepoint
+plt.figure(figsize=(6, 5))
+
+sns.scatterplot(
+    data=pc_df,
+    x="PC1",
+    y="PC2",
+    hue="timepoint",
+    palette="tab10",
+    s=80
+)
+
+plt.xlabel(
+    f"PC1 ({pca.explained_variance_ratio_[0]:.2%})"
+)
+
+plt.ylabel(
+    f"PC2 ({pca.explained_variance_ratio_[1]:.2%})"
+)
+
+plt.title("PCA: timepoint")
+
+plt.tight_layout()
+
+plt.savefig(
+    os.path.join(
+        figures_dir,
+        "pca_timepoint.png"
+    ),
+    bbox_inches="tight",
+    dpi=300
+)
+
+plt.show()
+
+#5.8 timepoint and batch
+plt.figure(figsize=(7, 5))
+
+sns.scatterplot(
+    data=pc_df,
+    x="PC1",
+    y="PC2",
+    hue="batch_nexp",
+    style="timepoint",
+    s=80
+)
+
+plt.xlabel(
+    f"PC1 ({pca.explained_variance_ratio_[0]:.2%})"
+)
+
+plt.ylabel(
+    f"PC2 ({pca.explained_variance_ratio_[1]:.2%})"
+)
+
+plt.title("PCA: batch_nexp")
+
+plt.tight_layout()
+
+plt.savefig(
+    os.path.join(
+        figures_dir,
+        "pca_batch_timepoint.png"
+    ),
+    bbox_inches="tight",
+    dpi=300
+)
+
+plt.show()
+
 # subset meta per timepoint
 meta_prod = meta[meta["timepoint"] == "product"]
 mat_vst_prod = mat_vst.loc[meta_prod.index]
@@ -461,7 +601,6 @@ plt.show()
 
 #6. DE analysis per each timepoint (product / d7 / d28)
 
-
 meta_all = meta.copy()
 # remove unknown (3 and 4 group)
 meta = meta[meta['group_analysis_1'] != "unknown"]
@@ -522,6 +661,203 @@ ds = DeseqStats(
 ds.summary()
 results_d28 = ds.results_df
 
+def filter_degs(results_de, timepoint):
+    deg = results_de.copy()
+    deg = deg[
+    (deg["padj"] < 0.05) &
+    (deg["log2FoldChange"].abs() > 1)
+]
+    deg.to_csv(os.path.join(dir_proc, f"degs_{timepoint}.tsv"), sep="\t")
+
+filter_degs(results_prod, timepoint="prod")
+filter_degs(results_d7, timepoint="d7")
+filter_degs(results_d28, timepoint="d28")
+
+
+
+#%%
+# Visualization - Volcano plot
+
+def volcano_plot(
+    de_results,
+    timepoint,
+    outdir,
+    padj_cutoff=0.05,
+    logfc_cutoff=1,
+    top_n_labels=10  # Количество генов для подписи
+):
+
+    df = de_results.copy()
+
+    df["padj"] = pd.to_numeric(
+        df["padj"],
+        errors="coerce"
+    )
+
+    df["log2FoldChange"] = pd.to_numeric(
+        df["log2FoldChange"],
+        errors="coerce"
+    )
+
+    df = df.dropna(
+        subset=[
+            "padj",
+            "log2FoldChange"
+        ]
+    )
+
+    df["minus_log10_padj"] = (
+        -np.log10(df["padj"] + 1e-300)
+    )
+
+    df["significance"] = "NS"
+
+    df.loc[
+        (df["padj"] < padj_cutoff) &
+        (df["log2FoldChange"] > logfc_cutoff),
+        "significance"
+    ] = "Up"
+
+    df.loc[
+        (df["padj"] < padj_cutoff) &
+        (df["log2FoldChange"] < -logfc_cutoff),
+        "significance"
+    ] = "Down"
+
+    plt.figure(figsize=(8,6))
+
+    # Снизили общую прозрачность (alpha=0.25), чтобы точки стали бледнее и не забивали текст
+    sns.scatterplot(
+        data=df,
+        x="log2FoldChange",
+        y="minus_log10_padj",
+        hue="significance",
+        palette={
+            "Up":"red",
+            "Down":"blue",
+            "NS":"grey"
+        },
+        alpha=0.25,
+        s=20,
+        linewidth=0
+    )
+
+    # --- НАЧАЛО БЛОКА ЧИТАЕМЫХ ПОДПИСЕЙ ---
+    top_genes = (
+        df[df["significance"].isin(["Up", "Down"])]
+        .sort_values("padj")
+        .head(top_n_labels)
+    )
+
+    # Небольшие сдвиги, чтобы текст не наползал на маркер
+    x_offset = 0.08 
+    y_offset = 0.05  
+
+    # Настройки белой подложки (белый прямоугольник с легкой прозрачностью)
+    label_bbox = dict(
+        boxstyle="round,pad=0.2", 
+        fc="white", 
+        ec="none", 
+        alpha=0.55
+    )
+
+    for idx, row in top_genes.iterrows():
+        gene_name = str(idx)
+        x_pos = row["log2FoldChange"]
+        y_pos = row["minus_log10_padj"]
+        
+        if x_pos > 0:
+            plt.text(
+                x_pos + x_offset, 
+                y_pos + y_offset, 
+                gene_name, 
+                fontsize=8, 
+                fontweight='bold', 
+                color="black",
+                ha='left', 
+                va='center',
+                bbox=label_bbox # Добавляем плашку под текст
+            )
+        else:
+            plt.text(
+                x_pos - x_offset, 
+                y_pos + y_offset, 
+                gene_name, 
+                fontsize=8, 
+                fontweight='bold', 
+                color="black",
+                ha='right', 
+                va='center',
+                bbox=label_bbox # Добавляем плашку под текст
+            )
+    # --- КОНЕЦ БЛОКА ЧИТАЕМЫХ ПОДПИСЕЙ ---
+
+    plt.axvline(
+        logfc_cutoff,
+        color="black",
+        linestyle="--",
+        linewidth=1
+    )
+
+    plt.axvline(
+        -logfc_cutoff,
+        color="black",
+        linestyle="--",
+        linewidth=1
+    )
+
+    plt.axhline(
+        -np.log10(padj_cutoff),
+        color="black",
+        linestyle="--",
+        linewidth=1
+    )
+
+    plt.xlabel("log2 Fold Change\nResponder vs Nonresponder")
+    plt.ylabel("-log10 adjusted p-value")
+
+    plt.title(
+        f"DESeq2 volcano plot: {timepoint}"
+    )
+
+    plt.legend(
+        title=""
+    )
+
+    sns.despine()
+
+    plt.tight_layout()
+
+    plt.savefig(
+        os.path.join(
+            outdir,
+            f"Volcano_DESeq2_{timepoint}.png"
+        ),
+        dpi=300
+    )
+
+    plt.close()
+
+
+
+volcano_plot(
+    results_prod,
+    "product",
+    figures_dir
+)
+
+volcano_plot(
+    results_d7,
+    "d7",
+    figures_dir
+)
+
+volcano_plot(
+    results_d28,
+    "d28",
+    figures_dir
+)
+#%%
 # Saving ranked gene list for GSEA
 # Use log2FoldChange as metric
 def save_files(de_results, timepoint=None):
@@ -545,7 +881,7 @@ gsea_d28 = save_files(results_d28, timepoint="d28")
 DE_prod_ranked = pd.read_csv(os.path.join(results_dir,"DE_prod_ranked.csv"), sep="\t", index_col = False)
 DE_d7_ranked = pd.read_csv(os.path.join(results_dir,"DE_d7_ranked.csv"), sep="\t", index_col = False)
 DE_d28_ranked = pd.read_csv(os.path.join(results_dir,"DE_d28_ranked.csv"), sep="\t", index_col = False)
-
+# %%
 def run_gsea_public_databases(DE_results, out_base_dir, timepoint):
     df = DE_results.copy()
     df = df.drop_duplicates(subset='gene', keep='first').copy()
@@ -680,6 +1016,8 @@ res_d28 = run_group_prerank(
 # Positive NES have responders, negative — nonresponders
 print(res_prod[['Term', 'NES', 'NOM p-val', 'FDR q-val']].head())
 
+
+
 #%%
 # 10. ssGSEA - 4 gene panels per each sample (without DE, need to compare responders with nonresponders)
 # all expression matrix icluding 3 and 4 group (as works per one sample)
@@ -698,9 +1036,13 @@ ss = gp.ssgsea(
     max_size=500,
     seed=42
 )
+
+#meta_all.to_csv(os.path.join(dir_proc, "meta_all.csv"))
 #%%
 
 scores_raw = pd.read_csv(os.path.join(results_dir, "results_gsea", "gseapy.gene_set.ssgsea.report.csv"), sep=",")
+meta_all = pd.read_csv(os.path.join(dir_proc, "meta_all.csv"), index_col = 0)
+
 
 scores_wide = scores_raw.pivot_table(
     index="Name",
@@ -709,7 +1051,7 @@ scores_wide = scores_raw.pivot_table(
 )
 # scores_wide: samples × subpopulations
 scores_all = scores_wide
-#%%
+
 # Compare responders vs nonresponders
 # remove 3 and 4 groups per test
 scores_known = scores_all.loc[
@@ -722,11 +1064,11 @@ scores_unknown = scores_all.loc[
 
 # saving for calculating dynamics
 
-
+'''
 scores_all.to_csv(os.path.join(results_dir, "results_gsea", "scores_all.csv"))
 scores_known.to_csv(os.path.join(results_dir, "results_gsea", "scores_known.csv"))
 scores_unknown.to_csv(os.path.join(results_dir, "results_gsea", "scores_unknown.csv"))
-meta_all.to_csv(os.path.join(dir_proc, "meta_all.csv"))
+'''
 # subset per each timepoint
 
 meta_prod = meta_all[meta_all["timepoint"] == "product"].copy()
@@ -857,53 +1199,168 @@ def pca_ssgsea(scores_df, meta_df, timepoint=None):
 
     # 2. Heatmap
 
+    # ============================================================
+# ssGSEA heatmaps — one heatmap per panel
+# ============================================================
+
     scores_z = scores_df.copy()
+
+# ------------------------------------------------------------
+# 1. Z-score each signature across samples
+# ------------------------------------------------------------
 
     scores_z = scores_z.apply(
     zscore,
-    axis=0)
+    axis=0
+)
+
+# ------------------------------------------------------------
+# 2. Sort patients by response group
+# ------------------------------------------------------------
 
     meta_hm = meta_df.copy()
 
-    # sort by annotation
-    sorted_index = meta_hm.sort_values(by="group_analysis_1").index
+    sorted_index = meta_hm.sort_values(
+    by="group_analysis_1"
+).index
+
     scores_z = scores_z.loc[sorted_index]
     meta_hm = meta_hm.loc[sorted_index]
 
+# ------------------------------------------------------------
+# 3. Patient labels
+# ------------------------------------------------------------
+
     new_labels = meta_hm["patient_id"]
+
     scores_z.index = new_labels
     meta_hm.index = new_labels
 
-    row_colors = pd.DataFrame({
-        "Response": meta_hm["group_analysis_1"].map({
-            "responder":"red",
-            "nonresponder":"blue"
-        })
-    }, index=scores_z.index)
+# ------------------------------------------------------------
+# 4. Identify panel for every signature
+# ------------------------------------------------------------
 
-    g = sns.clustermap(
-        scores_z,
+    panel_info = pd.DataFrame(
+    index=scores_z.columns
+)
+
+    panel_info["panel"] = (
+    panel_info.index
+    .astype(str)
+    .str.extract(
+        r"^(P[1-4])_",
+        expand=False
+    )
+)
+
+# ------------------------------------------------------------
+# 5. Mean absolute ssGSEA score
+#    across patients
+# ------------------------------------------------------------
+
+    panel_info["mean_abs_score"] = (
+    scores_df
+    .abs()
+    .mean(axis=0, skipna=True)
+)
+
+# ------------------------------------------------------------
+# 6. Create row colors
+# ------------------------------------------------------------
+
+    row_colors = pd.DataFrame({
+    "Response": meta_hm["group_analysis_1"].map({
+        "responder": "red",
+        "nonresponder": "blue"
+    })
+}, index=scores_z.index)
+
+# ============================================================
+# 7. Plot one heatmap per panel
+# ============================================================
+
+    for panel in ["P1", "P2", "P3", "P4"]:
+
+        panel_signatures = panel_info[
+        panel_info["panel"] == panel
+    ].sort_values(
+        "mean_abs_score",
+        ascending=False
+    ).index
+
+        panel_scores = scores_z.loc[
+        :,
+        panel_signatures
+    ]
+
+    # ----------------------------------------
+    # Heatmap
+    # ----------------------------------------
+
+        g = sns.clustermap(
+        panel_scores,
         cmap="RdBu_r",
         center=0,
+
+        # keep predefined ordering
         col_cluster=False,
-        row_cluster=False, # Set to False to keep strict sorting without tree reordering
+        row_cluster=False,
+
         row_colors=row_colors,
-        figsize=(12,10),
+
+        figsize=(
+            8,
+            10
+        ),
+
         xticklabels=True,
-        yticklabels=True
+        yticklabels=True,
+
+        linewidths=0.3,
+        linecolor="white"
     )
 
-    plt.setp(g.ax_heatmap.get_xticklabels(), fontsize=8, rotation=90)
-    
-    plt.setp(g.ax_heatmap.get_yticklabels(), fontsize=15, rotation=0)
+    # ----------------------------------------
+    # Formatting
+    # ----------------------------------------
+
+    plt.setp(
+        g.ax_heatmap.get_xticklabels(),
+        fontsize=8,
+        rotation=90
+    )
+
+    plt.setp(
+        g.ax_heatmap.get_yticklabels(),
+        fontsize=15,
+        rotation=0
+    )
+
+    g.ax_heatmap.set_xlabel(
+        "Gene signature"
+    )
+
+    g.ax_heatmap.set_ylabel(
+        "Patient"
+    )
+
+    g.ax_heatmap.set_title(
+        f"{panel} — ssGSEA signature activity — {timepoint}",
+        pad=20
+    )
+
+    # ----------------------------------------
+    # Save
+    # ----------------------------------------
 
     plt.savefig(
-    os.path.join(
-        figures_dir,
-        f"Heatmap_ssGSEA_{timepoint}.png"
-    ),
-    dpi=300
-)
+        os.path.join(
+            figures_dir,
+            f"Heatmap_ssGSEA_{panel}_{timepoint}.png"
+        ),
+        dpi=300,
+        bbox_inches="tight"
+    )
 
     plt.show()
 
@@ -1034,11 +1491,50 @@ if plots_log:
 
 # %%
 # ranked GSEA 4 panels
-nes_prod = pd.to_numeric(res_prod.set_index("Term")["NES"], errors='coerce')
-nes_d7 = pd.to_numeric(res_d7.set_index("Term")["NES"], errors='coerce')
-nes_d28 = pd.to_numeric(res_d28.set_index("Term")["NES"], errors='coerce')
+# NES heatmap with FDR significance markers
 
-# Объединяем в матрицу
+# -----------------------------
+# 1. Extract NES
+# -----------------------------
+
+nes_prod = pd.to_numeric(
+    res_prod.set_index("Term")["NES"],
+    errors="coerce"
+)
+
+nes_d7 = pd.to_numeric(
+    res_d7.set_index("Term")["NES"],
+    errors="coerce"
+)
+
+nes_d28 = pd.to_numeric(
+    res_d28.set_index("Term")["NES"],
+    errors="coerce"
+)
+
+# -----------------------------
+# 2. Extract FDR
+# -----------------------------
+
+fdr_prod = pd.to_numeric(
+    res_prod.set_index("Term")["FDR q-val"],
+    errors="coerce"
+)
+
+fdr_d7 = pd.to_numeric(
+    res_d7.set_index("Term")["FDR q-val"],
+    errors="coerce"
+)
+
+fdr_d28 = pd.to_numeric(
+    res_d28.set_index("Term")["FDR q-val"],
+    errors="coerce"
+)
+
+# -----------------------------
+# 3. Combine NES
+# -----------------------------
+
 nes_mat = pd.concat(
     [
         nes_prod.rename("product"),
@@ -1048,22 +1544,147 @@ nes_mat = pd.concat(
     axis=1
 )
 
-# Заполняем пропуски нулями (если термины не совпадают между таймпоинтами)
-# Для NES (Normalized Enrichment Score) ноль означает отсутствие обогащения
-nes_mat = nes_mat.fillna(0)
+# -----------------------------
+# 4. Combine FDR
+# -----------------------------
 
-# Строим кластерную карту
-sns.clustermap(
+fdr_mat = pd.concat(
+    [
+        fdr_prod.rename("product"),
+        fdr_d7.rename("d7"),
+        fdr_d28.rename("d28")
+    ],
+    axis=1
+)
+
+
+#panel per each signature
+panel_info = pd.DataFrame(index=nes_mat.index)
+
+panel_info["panel"] = (
+    panel_info.index
+    .astype(str)
+    .str.extract(r"^(P[1-4])_", expand=False)
+)
+
+panel_order = {
+    "P1": 1,
+    "P2": 2,
+    "P3": 3,
+    "P4": 4
+}
+
+panel_info["panel_order"] = (
+    panel_info["panel"]
+    .map(panel_order)
+)
+
+#sorting by mean NES in each panel
+panel_info["mean_abs_NES"] = (
+    nes_mat
+    .abs()
+    .mean(axis=1, skipna=True)
+)
+
+panel_info = panel_info.sort_values(
+    ["panel_order", "mean_abs_NES"],
+    ascending=[True, False]
+)
+
+ordered_signatures = panel_info.index
+
+nes_mat = nes_mat.loc[ordered_signatures]
+fdr_mat = fdr_mat.reindex(ordered_signatures)
+
+# -----------------------------
+# 5. Keep only pathways that
+#    have at least one significant
+#    result in any timepoint
+# -----------------------------
+
+'''
+significant_any = (fdr_mat < 0.05).any(axis=1)
+nes_mat = nes_mat.loc[significant_any]
+fdr_mat = fdr_mat.loc[significant_any]
+'''
+
+# -----------------------------
+# 6. Replace missing NES with 0
+# -----------------------------
+
+#nes_mat = nes_mat.fillna(0)
+
+# -----------------------------
+# 7. Create significance labels
+# -----------------------------
+
+significance = fdr_mat.applymap(
+    lambda x: "*" if pd.notna(x) and x < 0.05 else ""
+)
+
+# -----------------------------
+# 8. Plot heatmap
+# -----------------------------
+
+g = sns.clustermap(
     nes_mat,
     cmap="RdBu_r",
     center=0,
-    figsize=(12, 35),
-    col_cluster=False
+    figsize=(10, max(8, len(nes_mat) * 0.30)),
+    col_cluster=False,
+    row_cluster=False,
+    linewidths=0.5,
+    linecolor="white",
+    annot=significance,
+    fmt="",
+    annot_kws={
+        "fontsize": 9,
+        "fontweight": "bold"
+    }
 )
 
+# Labels
+
+g.ax_heatmap.set_xlabel("Timepoint")
+g.ax_heatmap.set_ylabel("Gene signature")
+
+g.ax_heatmap.set_xticklabels(
+    ["Product", "Day 7", "Day 28"],
+    rotation=0
+)
+
+g.ax_heatmap.set_title(
+    "Ranked GSEA all signatures enrichment across timepoints",
+    pad=20
+)
+
+# 9. Add horizontal lines between panels
+# ------------------------------------------------------------
+
+panel_sequence = panel_info["panel"].values
+
+boundaries = np.where(
+    panel_sequence[1:] != panel_sequence[:-1]
+)[0] + 1
+
+for boundary in boundaries:
+    g.ax_heatmap.axhline(
+        boundary,
+        color="black",
+        linewidth=1.5
+    )
+
+# -----------------------------
+# 10. Save
+# -----------------------------
+
 plt.savefig(
-    os.path.join(figures_dir, "NES_timepoints_heatmap.png"),
-    dpi=300
+    os.path.join(
+        figures_dir,
+        "NES_timepoints_heatmap.png"
+    ),
+    dpi=300,
+    bbox_inches="tight"
 )
 
 plt.show()
@@ -1104,5 +1725,410 @@ d28_pos, d28_neg = get_best(res_d28)
 
 # make panel of these pictures
 # %%
+# ranked GSEA 4 panels
+def gsea_dotplot(gsea_results, timepoint, outdir, top_n=15):
+    df = gsea_results.copy()
+    df['NES'] = pd.to_numeric(df['NES'], errors='coerce')
+    df['FDR q-val'] = pd.to_numeric(df['FDR q-val'], errors='coerce')
+    
+    df = df.sort_values('FDR q-val').head(top_n)
+    df['minus_log10_FDR'] = -np.log10(df['FDR q-val'] + 1e-300)
+    
+    plt.figure(figsize=(9, 6))
+    
+    # Безопасное определение цветовой нормы
+    nes_min = df['NES'].min()
+    nes_max = df['NES'].max()
+    
+    if nes_min < 0 and nes_max > 0:
+        # Если есть и положительные, и отрицательные NES
+        norm_hue = TwoSlopeNorm(vcenter=0, vmin=nes_min, vmax=nes_max)
+    else:
+        # Если все значения строго > 0 или строго < 0
+        norm_hue = Normalize(vmin=nes_min, vmax=nes_max)
+    
+    sns.scatterplot(
+        data=df,
+        x='NES',
+        y='Term',
+        size='minus_log10_FDR',
+        hue='NES',
+        palette='RdBu_r',
+        hue_norm=norm_hue,
+        sizes=(20, 500),  # Расширенный диапазон размеров
+        edgecolor='black'
+    )
+    
+    plt.axvline(0, color='black', linestyle='--')
+    plt.title(f'GSEA pathways: {timepoint}')
+    plt.xlabel('Normalized Enrichment Score')
+    plt.ylabel('')
+    
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', frameon=True)
+    plt.tight_layout()
+    
+    plt.savefig(os.path.join(outdir, f'GSEA_dotplot_{timepoint}.png'), dpi=300, bbox_inches='tight')
+    plt.close()
 
 
+
+gsea_dotplot(
+    res_prod,
+    "product",
+    figures_dir
+)
+
+gsea_dotplot(
+    res_d7,
+    "d7",
+    figures_dir
+)
+
+gsea_dotplot(
+    res_d28,
+    "d28",
+    figures_dir
+)
+
+# %%
+# after classification
+# 4 group unresponder
+# 3 group responder
+
+design_formula = "~ batch_nexp + group_analysis_1"
+
+dds = DeseqDataSet(
+    counts=counts_new,
+    metadata=meta_new,
+    design=design_formula
+)
+dds.deseq2()
+vsd = dds.vst()
+vst = dds.layers['vst_counts']
+#vst counts
+mat_vst_new = pd.DataFrame(
+    dds.layers['vst_counts'],
+    index=dds.obs_names,   # samples
+    columns=dds.var_names  # genes
+)
+# for GSEA
+expr_all_new = mat_vst_new.T  # genes X samples
+expr_all_new.index.name = "gene"
+expr_all_new.to_csv(os.path.join(dir_proc, "expr_vst_cl.tsv"), sep="\t")
+# %%
+# mat_vst: samples × genes
+pca = PCA(n_components=10)
+pcs = pca.fit_transform(mat_vst_new)  # (n_samples, 10)
+pc_df = pd.DataFrame(
+    pcs[:, :2],
+    columns=["PC1", "PC2"],
+    index=mat_vst_new.index
+).join(meta_new)  # meta.index = sample_id = dds.obs_names
+# %%
+
+#5.1. group_analysis_1
+plt.figure(figsize=(6, 5))
+sns.scatterplot(
+    data=pc_df,
+    x="PC1", y="PC2",
+    hue="group_analysis_1",
+    palette="tab10",
+    s=80
+)
+plt.xlabel(f"PC1 ({pca.explained_variance_ratio_[0]:.2%})")
+plt.ylabel(f"PC2 ({pca.explained_variance_ratio_[1]:.2%})")
+plt.tight_layout()
+plt.savefig(os.path.join(figures_dir, "pca_group1_cl.png"), bbox_inches='tight', dpi=300)
+plt.show()
+
+plt.figure(figsize=(6, 5))
+sns.scatterplot(
+    data=pc_df,
+    x="PC1", y="PC2",
+    hue="group_analysis_2",
+    palette="tab10",
+    s=80
+)
+plt.xlabel(f"PC1 ({pca.explained_variance_ratio_[0]:.2%})")
+plt.ylabel(f"PC2 ({pca.explained_variance_ratio_[1]:.2%})")
+plt.tight_layout()
+plt.savefig(os.path.join(figures_dir, "pca_group2_cl.png"), bbox_inches='tight', dpi=300)
+plt.show()
+
+#5.2. group_analysis_1 and timepoint
+plt.figure(figsize=(6, 5))
+sns.scatterplot(
+    data=pc_df,
+    x="PC1", y="PC2",
+    hue="timepoint",      # product / d28 / 2months
+    style="group_analysis_1",  # responsive / unresponsive / unknown
+    palette="tab10",
+    s=80
+)
+plt.xlabel(f"PC1 ({pca.explained_variance_ratio_[0]:.2%})")
+plt.ylabel(f"PC2 ({pca.explained_variance_ratio_[1]:.2%})")
+plt.tight_layout()
+plt.savefig(os.path.join(figures_dir, "pca_timepoint_group1_cl.png"), bbox_inches='tight', dpi=300)
+plt.show()
+
+#5.3. group_analysis_2 and timepoint
+plt.figure(figsize=(6, 5))
+sns.scatterplot(
+    data=pc_df,
+    x="PC1", y="PC2",
+    hue="timepoint",      # product / d28 / 2months
+    style="group_analysis_2",  # responsive / unresponsive / unknown
+    palette="tab10",
+    s=80
+)
+plt.xlabel(f"PC1 ({pca.explained_variance_ratio_[0]:.2%})")
+plt.ylabel(f"PC2 ({pca.explained_variance_ratio_[1]:.2%})")
+plt.tight_layout()
+plt.savefig(os.path.join(figures_dir, "pca_timepoint_group2_cl.png"), bbox_inches='tight', dpi=300)
+plt.show()
+
+#5.4. patient_id
+plt.figure(figsize=(8, 6))
+sns.scatterplot(
+    data=pc_df,
+    x="PC1", y="PC2",
+    hue="patient_id",
+    palette="tab20",
+    s=80
+)
+plt.xlabel(f"PC1 ({pca.explained_variance_ratio_[0]:.2%})")
+plt.ylabel(f"PC2 ({pca.explained_variance_ratio_[1]:.2%})")
+plt.tight_layout()
+plt.savefig(os.path.join(figures_dir, "pca_patient_id_cl.png"), bbox_inches='tight', dpi=300)
+plt.show()
+
+#5.5. batch_nexp
+plt.figure(figsize=(6, 5))
+sns.scatterplot(
+    data=pc_df,
+    x="PC1", y="PC2",
+    hue="batch_nexp",
+    s=80
+)
+plt.xlabel(f"PC1 ({pca.explained_variance_ratio_[0]:.2%})")
+plt.ylabel(f"PC2 ({pca.explained_variance_ratio_[1]:.2%})")
+plt.tight_layout()
+plt.savefig(os.path.join(figures_dir, "pca_nbatch_cl.png"), bbox_inches='tight', dpi=300)
+plt.show()
+
+#5.6. batch_seq
+plt.figure(figsize=(6, 5))
+sns.scatterplot(
+    data=pc_df,
+    x="PC1", y="PC2",
+    hue="batch_seq",
+    s=80
+)
+plt.xlabel(f"PC1 ({pca.explained_variance_ratio_[0]:.2%})")
+plt.ylabel(f"PC2 ({pca.explained_variance_ratio_[1]:.2%})")
+plt.tight_layout()
+plt.savefig(os.path.join(figures_dir, "pca_seqbatch_cl.png"), bbox_inches='tight', dpi=300)
+plt.show()
+
+#5.7 by timepoint
+plt.figure(figsize=(6, 5))
+
+sns.scatterplot(
+    data=pc_df,
+    x="PC1",
+    y="PC2",
+    hue="timepoint",
+    palette="tab10",
+    s=80
+)
+
+plt.xlabel(
+    f"PC1 ({pca.explained_variance_ratio_[0]:.2%})"
+)
+
+plt.ylabel(
+    f"PC2 ({pca.explained_variance_ratio_[1]:.2%})"
+)
+
+plt.title("PCA: timepoint")
+
+plt.tight_layout()
+
+plt.savefig(
+    os.path.join(
+        figures_dir,
+        "pca_timepoint_cl.png"
+    ),
+    bbox_inches="tight",
+    dpi=300
+)
+
+plt.show()
+
+#5.8 timepoint and batch
+plt.figure(figsize=(7, 5))
+
+sns.scatterplot(
+    data=pc_df,
+    x="PC1",
+    y="PC2",
+    hue="batch_nexp",
+    style="timepoint",
+    s=80
+)
+
+plt.xlabel(
+    f"PC1 ({pca.explained_variance_ratio_[0]:.2%})"
+)
+
+plt.ylabel(
+    f"PC2 ({pca.explained_variance_ratio_[1]:.2%})"
+)
+
+plt.title("PCA: batch_nexp")
+
+plt.tight_layout()
+
+plt.savefig(
+    os.path.join(
+        figures_dir,
+        "pca_batch_timepoint_cl.png"
+    ),
+    bbox_inches="tight",
+    dpi=300
+)
+
+plt.show()
+
+# subset meta per timepoint
+meta_prod = meta_new[meta_new["timepoint"] == "product"]
+mat_vst_prod = mat_vst_new.loc[meta_prod.index]
+
+pca_prod = PCA(n_components=10)
+pcs_prod = pca_prod.fit_transform(mat_vst_prod)
+
+pc_prod_df = pd.DataFrame(
+    pcs_prod[:, :2],
+    columns=["PC1", "PC2"],
+    index=mat_vst_prod.index
+).join(meta_prod)
+
+plt.figure(figsize=(6, 5))
+sns.scatterplot(
+    data=pc_prod_df,
+    x="PC1", y="PC2",
+    hue="group_analysis_1",
+    palette="tab10",
+    s=80
+)
+plt.xlabel(f"PC1 ({pca_prod.explained_variance_ratio_[0]:.2%})")
+plt.ylabel(f"PC2 ({pca_prod.explained_variance_ratio_[1]:.2%})")
+plt.tight_layout()
+plt.savefig(os.path.join(figures_dir, "pca_product_group1_cl.png"), bbox_inches='tight', dpi=300)
+plt.show()
+
+#d7
+
+meta_d7 = meta_new[meta_new["timepoint"] == "d7 after"]
+mat_vst_d7 = mat_vst_new.loc[meta_d7.index]
+
+pca_d7 = PCA(n_components=10)
+pcs_d7 = pca_d7.fit_transform(mat_vst_d7)
+
+pc_d7_df = pd.DataFrame(
+    pcs_d7[:, :2],
+    columns=["PC1", "PC2"],
+    index=mat_vst_d7.index
+).join(meta_d7)
+
+plt.figure(figsize=(6, 5))
+sns.scatterplot(
+    data=pc_d7_df,
+    x="PC1", y="PC2",
+    hue="group_analysis_1",
+    palette="tab10",
+    s=80
+)
+plt.xlabel(f"PC1 ({pca_d7.explained_variance_ratio_[0]:.2%})")
+plt.ylabel(f"PC2 ({pca_d7.explained_variance_ratio_[1]:.2%})")
+plt.tight_layout()
+plt.savefig(os.path.join(figures_dir, "pca_d7_after_group1_cl.png"), bbox_inches='tight', dpi=300)
+plt.show()
+
+#%%
+#d28
+meta_d28 = meta_new[meta_new["timepoint"] == "d28 after"]
+mat_vst_d28 = mat_vst_new.loc[meta_d28.index]
+
+pca_d28 = PCA(n_components=10)
+pcs_d28 = pca_d28.fit_transform(mat_vst_d28)
+
+pc_d28_df = pd.DataFrame(
+    pcs_d28[:, :2],
+    columns=["PC1", "PC2"],
+    index=mat_vst_d28.index
+).join(meta_d28)
+
+plt.figure(figsize=(6, 5))
+sns.scatterplot(
+    data=pc_d28_df,
+    x="PC1", y="PC2",
+    hue="group_analysis_1",
+    style="group_analysis_2",
+    palette="tab10",
+    s=80
+)
+# Add patient ids
+for patient_id, row in pc_d28_df.iterrows():
+    plt.text(
+                row["PC1"],  
+                row["PC2"], 
+                str(row["patient_id"]), 
+                fontsize=8,        
+                alpha=0.8,         
+                weight="semibold" 
+            )
+
+plt.xlabel(
+    f"PC1 ({100*pca.explained_variance_ratio_[0]:.1f}%)"
+)
+
+plt.ylabel(
+    f"PC2 ({100*pca.explained_variance_ratio_[1]:.1f}%)"
+)
+
+plt.savefig(os.path.join(figures_dir, "pca_d28_after_group1_cl.png"), bbox_inches='tight', dpi=300)
+plt.show()
+
+plt.figure(figsize=(6, 5))
+sns.scatterplot(
+    data=pc_d28_df,
+    x="PC1", y="PC2",
+    hue="group_analysis_1",
+    style="batch_seq",
+    palette="tab10",
+    s=80
+)
+# Add patient ids
+for patient_id, row in pc_d28_df.iterrows():
+    plt.text(
+                row["PC1"],  
+                row["PC2"], 
+                str(row["patient_id"]), 
+                fontsize=8,        
+                alpha=0.8,         
+                weight="semibold" 
+            )
+
+plt.xlabel(
+    f"PC1 ({100*pca.explained_variance_ratio_[0]:.1f}%)"
+)
+
+plt.ylabel(
+    f"PC2 ({100*pca.explained_variance_ratio_[1]:.1f}%)"
+)
+
+plt.savefig(os.path.join(figures_dir, "pca_d28_after_group1_batch_cl.png"), bbox_inches='tight', dpi=300)
+plt.show()
+
+# %%
