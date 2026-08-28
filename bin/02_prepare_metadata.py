@@ -1,26 +1,70 @@
 import os
+import argparse
 import numpy as np
 import pandas as pd
 
-# Path
 
-project_dir = "/Users/darakuzmina/Desktop/CAR_T"
-ann_dir = "/Users/darakuzmina/Desktop/crc_metastasis_analysis/data"
+# Arguments
 
-dir_raw = os.path.join(project_dir, "data", "raw")
-dir_proc = os.path.join(project_dir, "data", "processed")
+
+parser = argparse.ArgumentParser(
+    description="Prepare count matrix and clinical metadata"
+)
+
+parser.add_argument(
+    "--expression",
+    required=True
+)
+
+parser.add_argument(
+    "--clinical",
+    required=True
+)
+
+parser.add_argument(
+    "--clinical_new",
+    required=True
+)
+
+parser.add_argument(
+    "--output_dir",
+    required=True
+)
+
+args = parser.parse_args()
+
+# Output directory
+
+os.makedirs(
+    args.output_dir,
+    exist_ok=True
+)
+
+
+# Load data
+
+expression = pd.read_csv(
+    args.expression,
+    index_col=0,
+    sep="\t"
+)
+
+info_cart = pd.read_csv(
+    args.clinical
+)
+
+info_new = pd.read_csv(
+    args.clinical_new
+)
+
 
 # 1. Match old and new clinical data
-
-info_cart = pd.read_csv(os.path.join(dir_raw,"clinical_data.csv"))
-info_new = pd.read_csv(os.path.join(dir_raw,"clinical_data_new.csv"))
 
 clinical = info_cart.merge(info_new, on = "sample_id")
 clinical["sample_id"] = clinical["sample_id"].str.replace(" ", "_") # _ in patient_id
 
 # 2. Check matching between expression and clinical data
 
-expression = pd.read_csv(os.path.join(dir_raw, "expression_raw_ann.tsv"), index_col=0, sep="\t")
 
 common_samples = sorted(
     set(expression.columns)
@@ -88,7 +132,7 @@ assert list(counts.index) == list(meta.index), "Indices don't match"
 
 counts.to_csv(
     os.path.join(
-        dir_proc,
+        args.output_dir,
         "counts.tsv"
     ),
     sep="\t"
@@ -96,7 +140,7 @@ counts.to_csv(
 
 meta.to_csv(
     os.path.join(
-        dir_proc,
+        args.output_dir,
         "meta_analysis.tsv"
     ),
     sep="\t"

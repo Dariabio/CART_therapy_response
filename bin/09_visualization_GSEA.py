@@ -11,35 +11,11 @@ from sklearn.decomposition import PCA
 from scipy.stats import zscore
 from matplotlib.colors import TwoSlopeNorm, Normalize
 
+#  Arguments
 
-# ============================================================
-# 1. PATHS
-# ============================================================
-
-project_dir = "/Users/darakuzmina/Desktop/CAR_T"
-
-results_dir = os.path.join(
-    project_dir,
-    "results"
+parser = argparse.ArgumentParser(
+    description="ssGSEA and ranked GSEA visualization"
 )
-
-figures_dir = os.path.join(
-    project_dir,
-    "figures"
-)
-
-dir_proc = os.path.join(
-    project_dir,
-    "data",
-    "processed"
-)
-
-
-# ============================================================
-# 2. ARGUMENTS
-# ============================================================
-
-parser = argparse.ArgumentParser()
 
 parser.add_argument(
     "--comparison",
@@ -53,14 +29,42 @@ parser.add_argument(
     ]
 )
 
+parser.add_argument(
+    "--metadata",
+    required=True
+)
+
+parser.add_argument(
+    "--scores_all",
+    required=True
+)
+
+parser.add_argument(
+    "--stat_ssgsea_dir",
+    required=True
+)
+
+parser.add_argument(
+    "--ranked_gsea_dir",
+    required=True
+)
+
+parser.add_argument(
+    "--output_dir",
+    required=True
+)
+
 args = parser.parse_args()
 
 comparison = args.comparison
 
+os.makedirs(
+    args.output_dir,
+    exist_ok=True
+)
 
-# ============================================================
-# 3. COMPARISON CONFIGURATION
-# ============================================================
+
+# COMPARISON CONFIGURATION
 
 COMPARISONS = {
 
@@ -103,52 +107,22 @@ positive = config["positive"]
 negative = config["negative"]
 
 
-# ============================================================
-# 4. OUTPUT DIRECTORY
-# ============================================================
+# LOAD METADATA
 
-comparison_figures_dir = os.path.join(
-    figures_dir,
-    comparison
-)
-
-os.makedirs(
-    comparison_figures_dir,
-    exist_ok=True
-)
-
-
-# ============================================================
-# 5. LOAD METADATA
-# ============================================================
 
 meta = pd.read_csv(
-    os.path.join(
-        dir_proc,
-        "meta_analysis.tsv"
-    ),
+    args.metadata,
     sep="\t",
     index_col=0
 )
 
-
-# ============================================================
-# 6. LOAD ssGSEA SCORES
-# ============================================================
-
 scores = pd.read_csv(
-    os.path.join(
-        results_dir,
-        "ssgsea",
-        "scores_all.csv"
-    ),
+    args.scores_all,
+    sep=",",
     index_col=0
 )
 
-
-# ============================================================
-# 7. MATCH SAMPLES
-# ============================================================
+#  1. MATCH SAMPLES
 
 common_samples = (
     meta.index
@@ -163,10 +137,8 @@ scores = scores.loc[
     common_samples
 ].copy()
 
+# KEEP ONLY SAMPLES FOR CURRENT COMPARISON
 
-# ============================================================
-# 8. KEEP ONLY SAMPLES FOR CURRENT COMPARISON
-# ============================================================
 
 comparison_mask = meta[
     comparison_column
@@ -184,17 +156,8 @@ scores = scores.loc[
 ].copy()
 
 
-print("\n========================================")
-print(f"Comparison: {comparison}")
-print(f"Column: {comparison_column}")
-print(f"Positive: {positive}")
-print(f"Negative: {negative}")
-print("========================================\n")
+# TIMEPOINTS
 
-
-# ============================================================
-# 9. TIMEPOINTS
-# ============================================================
 
 TIMEPOINTS = {
     "product": "product",
@@ -203,9 +166,7 @@ TIMEPOINTS = {
 }
 
 
-# ============================================================
-# 10. PREPARE DATA BY TIMEPOINT
-# ============================================================
+# PREPARE DATA BY TIMEPOINT
 
 scores_by_tp = {}
 meta_by_tp = {}
@@ -248,10 +209,7 @@ for short_name, tp in TIMEPOINTS.items():
 
     print()
 
-
-# ============================================================
-# 11. PCA ssGSEA
-# ============================================================
+#2. PCA ssGSEA
 
 def pca_ssgsea(
     scores_df,
@@ -267,9 +225,7 @@ def pca_ssgsea(
         )
         return
 
-    # --------------------------------------------------------
     # PCA
-    # --------------------------------------------------------
 
     pca = PCA(
         n_components=2
@@ -292,9 +248,7 @@ def pca_ssgsea(
         meta_df
     )
 
-    # --------------------------------------------------------
     # Plot
-    # --------------------------------------------------------
 
     plt.figure(
         figsize=(8, 6)
@@ -309,9 +263,9 @@ def pca_ssgsea(
         s=120
     )
 
-    # --------------------------------------------------------
+
     # Patient labels
-    # --------------------------------------------------------
+
 
     for sample_id, row in pca_df.iterrows():
 
@@ -324,9 +278,9 @@ def pca_ssgsea(
             weight="semibold"
         )
 
-    # --------------------------------------------------------
+
     # Axis labels
-    # --------------------------------------------------------
+
 
     plt.xlabel(
         f"PC1 "
@@ -346,9 +300,8 @@ def pca_ssgsea(
 
     plt.tight_layout()
 
-    # --------------------------------------------------------
     # Save
-    # --------------------------------------------------------
+
 
     output_file = os.path.join(
         outdir,
@@ -368,9 +321,7 @@ def pca_ssgsea(
     )
 
 
-# ============================================================
-# 12. RUN PCA
-# ============================================================
+# RUN PCA
 
 for short_name in TIMEPOINTS:
 
@@ -378,14 +329,13 @@ for short_name in TIMEPOINTS:
         scores_by_tp[short_name],
         meta_by_tp[short_name],
         short_name,
-        comparison_figures_dir
+        args.output_dir
     )
 
 
-# ============================================================
-# 13. ssGSEA HEATMAPS
-#     ONE HEATMAP FOR EACH PANEL
-# ============================================================
+# 3. ssGSEA HEATMAPS
+# ONE HEATMAP FOR EACH PANEL
+
 
 def ssgsea_heatmaps(
     scores_df,
@@ -401,9 +351,9 @@ def ssgsea_heatmaps(
         )
         return
 
-    # --------------------------------------------------------
+  
     # Z-score signatures across samples
-    # --------------------------------------------------------
+
 
     scores_z = scores_df.copy()
 
@@ -417,9 +367,9 @@ def ssgsea_heatmaps(
         np.nan
     )
 
-    # --------------------------------------------------------
+   
     # Sort samples by comparison group
-    # --------------------------------------------------------
+   
 
     meta_hm = meta_df.copy()
 
@@ -439,9 +389,9 @@ def ssgsea_heatmaps(
         sorted_index
     ]
 
-    # --------------------------------------------------------
+ 
     # Patient labels
-    # --------------------------------------------------------
+   
 
     patient_labels = (
         meta_hm[
@@ -452,9 +402,9 @@ def ssgsea_heatmaps(
 
     scores_z.index = patient_labels
 
-    # --------------------------------------------------------
+
     # Identify panel
-    # --------------------------------------------------------
+
 
     panel_info = pd.DataFrame(
         index=scores_z.columns
@@ -469,9 +419,8 @@ def ssgsea_heatmaps(
         )
     )
 
-    # --------------------------------------------------------
     # Mean absolute score
-    # --------------------------------------------------------
+
 
     panel_info["mean_abs_score"] = (
         scores_df
@@ -482,9 +431,8 @@ def ssgsea_heatmaps(
         )
     )
 
-    # --------------------------------------------------------
     # Row colors
-    # --------------------------------------------------------
+
 
     row_colors = pd.DataFrame(
         {
@@ -496,9 +444,8 @@ def ssgsea_heatmaps(
         index=scores_z.index
     )
 
-    # --------------------------------------------------------
     # One heatmap per panel
-    # --------------------------------------------------------
+    
 
     for panel in [
         "P1",
@@ -587,9 +534,8 @@ def ssgsea_heatmaps(
             pad=20
         )
 
-        # ----------------------------------------------------
         # Save
-        # ----------------------------------------------------
+
 
         output_file = os.path.join(
             outdir,
@@ -611,9 +557,8 @@ def ssgsea_heatmaps(
         )
 
 
-# ============================================================
-# 14. RUN ssGSEA HEATMAPS
-# ============================================================
+# RUN ssGSEA HEATMAPS
+
 
 for short_name in TIMEPOINTS:
 
@@ -621,23 +566,18 @@ for short_name in TIMEPOINTS:
         scores_by_tp[short_name],
         meta_by_tp[short_name],
         short_name,
-        comparison_figures_dir
+        args.output_dir
     )
 
-
-# ============================================================
-# 15. LOAD ssGSEA STATISTICAL RESULTS
-# ============================================================
+# 4. LOAD ssGSEA STATISTICAL RESULTS
 
 def load_ssgsea_results(
     comparison,
     timepoint
 ):
-
+    
     path = os.path.join(
-        results_dir,
-        "ssgsea",
-        comparison,
+        args.stat_ssgsea_dir,
         f"ssGSEA_{timepoint}.tsv"
     )
 
@@ -657,17 +597,16 @@ def load_ssgsea_results(
 
 
 # ============================================================
-# 16. ssGSEA BOXPLOTS
+# 5. ssGSEA BOXPLOTS
 # ============================================================
 
 def make_ssgsea_boxplots(
-    outdir,
     top_n=10,
     p_cutoff=0.05
 ):
 
     boxplot_dir = os.path.join(
-        outdir,
+        args.output_dir,
         "ssGSEA_boxplots"
     )
 
@@ -904,62 +843,31 @@ def make_ssgsea_boxplots(
                 f"Saved: {output_file}"
             )
 
-    # --------------------------------------------------------
-    # Save log
-    # --------------------------------------------------------
 
-    if plots_log:
+# RUN ssGSEA BOXPLOTS
 
-        pd.DataFrame(
-            plots_log
-        ).sort_values(
-            "p_value"
-        ).to_csv(
-            os.path.join(
-                boxplot_dir,
-                "generated_plots_summary.tsv"
-            ),
-            sep="\t",
-            index=False
-        )
-
+make_ssgsea_boxplots()
 
 # ============================================================
-# 17. RUN ssGSEA BOXPLOTS
-# ============================================================
-
-make_ssgsea_boxplots(
-    comparison_figures_dir
-)
-
-
-# ============================================================
-# 18. LOAD RANKED GSEA RESULTS
-
+# 6. LOAD RANKED GSEA RESULTS
 
 def load_ranked_gsea_results(comparison):
 
-    gsea_dir = os.path.join(
-        results_dir,
-        comparison,
-        "ranked_gsea"
-    )
-
     result_files = {
         "product": os.path.join(
-            gsea_dir,
+            args.ranked_gsea_dir,
             "product",
             "gseapy.gene_set.prerank.report.csv"
         ),
 
         "d7": os.path.join(
-            gsea_dir,
+            args.ranked_gsea_dir,
             "d7",
             "gseapy.gene_set.prerank.report.csv"
         ),
 
         "d28": os.path.join(
-            gsea_dir,
+            args.ranked_gsea_dir,
             "d28",
             "gseapy.gene_set.prerank.report.csv"
         )
@@ -1062,24 +970,16 @@ def load_ranked_gsea_results(comparison):
     return results
 
 
-# ============================================================
-# 19. LOAD RANKED GSEA
-# ============================================================
 
-ranked_gsea_results = (
-    load_ranked_gsea_results(
-        comparison
-    )
-)
+ranked_gsea_results = load_ranked_gsea_results(comparison)
 
 
 # ============================================================
-# 20. COMMON RANKED GSEA NES HEATMAP
+# 7. COMMON RANKED GSEA NES HEATMAP
 # ============================================================
 
 def ranked_gsea_heatmap(
-    gsea_results,
-    outdir
+    gsea_results
 ):
 
     if not gsea_results:
@@ -1348,7 +1248,7 @@ def ranked_gsea_heatmap(
     # --------------------------------------------------------
 
     output_file = os.path.join(
-        outdir,
+        args.output_dir,
         "Ranked_GSEA_NES_heatmap.png"
     )
 
@@ -1370,29 +1270,20 @@ def ranked_gsea_heatmap(
         output_file
     )
 
-
-# ============================================================
-# 21. RUN RANKED GSEA HEATMAP
-# ============================================================
-
 ranked_gsea_heatmap(
-    ranked_gsea_results,
-    comparison_figures_dir
+    ranked_gsea_results
 )
 
+# 8. RANKED GSEA DOTPLOT
 
-# ============================================================
-# 22. RANKED GSEA DOTPLOT
-# ============================================================
 
 def gsea_dotplot(
-    gsea_results,
+    gsea_df,
     timepoint,
-    outdir,
     top_n=15
 ):
 
-    df = gsea_results.copy()
+    df = gsea_df.copy()
 
     # --------------------------------------------------------
     # Numeric conversion
@@ -1511,9 +1402,10 @@ def gsea_dotplot(
     plt.tight_layout()
 
     output_file = os.path.join(
-        outdir,
+        args.output_dir,
         f"GSEA_dotplot_{timepoint}.png"
     )
+
 
     plt.savefig(
         output_file,
@@ -1528,9 +1420,8 @@ def gsea_dotplot(
     )
 
 
-# ============================================================
-# 23. RUN RANKED GSEA DOTPLOTS
-# ============================================================
+# RUN RANKED GSEA DOTPLOTS
+
 
 for timepoint in [
     "product",
@@ -1545,35 +1436,6 @@ for timepoint in [
         ranked_gsea_results[
             timepoint
         ],
-        timepoint,
-        comparison_figures_dir
+        timepoint
     )
 
-
-# ============================================================
-# 24. FINISHED
-# ============================================================
-
-print(
-    "\n========================================"
-)
-
-print(
-    "Visualization completed successfully."
-)
-
-print(
-    f"Comparison: {comparison}"
-)
-
-print(
-    f"Figures saved to:"
-)
-
-print(
-    comparison_figures_dir
-)
-
-print(
-    "========================================\n"
-)

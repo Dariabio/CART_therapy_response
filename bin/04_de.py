@@ -1,56 +1,26 @@
 import os
 import pandas as pd
 import argparse
-
 from pydeseq2.dds import DeseqDataSet
 from pydeseq2.ds import DeseqStats
 
+# Arguments
 
-# ============================================================
-# PATHS
-# ============================================================
-
-project_dir = "/Users/darakuzmina/Desktop/CAR_T"
-
-dir_proc = os.path.join(
-    project_dir,
-    "data",
-    "processed"
+parser = argparse.ArgumentParser(
+    description="Run DESeq2 analysis for one comparison"
 )
 
-
-# ============================================================
-# LOAD DATA
-# ============================================================
-
-counts = pd.read_csv(
-    os.path.join(
-        dir_proc,
-        "counts.tsv"
-    ),
-    sep="\t",
-    index_col=0
+parser.add_argument(
+    "--counts",
+    required=True,
+    help="Counts matrix: samples x genes"
 )
 
-meta = pd.read_csv(
-    os.path.join(
-        dir_proc,
-        "meta_analysis.tsv"
-    ),
-    sep="\t",
-    index_col=0
+parser.add_argument(
+    "--metadata",
+    required=True,
+    help="Metadata table"
 )
-
-
-print("Counts shape:", counts.shape)
-print("Metadata shape:", meta.shape)
-
-
-# ============================================================
-# COMPARISON
-# ============================================================
-
-parser = argparse.ArgumentParser()
 
 parser.add_argument(
     "--comparison",
@@ -64,9 +34,12 @@ parser.add_argument(
     ]
 )
 
-args = parser.parse_args()
+parser.add_argument(
+    "--output_dir",
+    required=True
+)
 
-comparison = args.comparison
+args = parser.parse_args()
 
 # Configurations
 COMPARISONS = {
@@ -103,63 +76,38 @@ COMPARISONS = {
 }
 
 
-config = COMPARISONS[comparison]
+config = COMPARISONS[args.comparison]
 
 comparison_column = config["column"]
 positive = config["positive"]
 negative = config["negative"]
 
+# Load data
+counts = pd.read_csv(
+    args.counts,
+    sep="\t",
+    index_col=0
+)
 
-print("\n========================================")
-print("COMPARISON")
-print("========================================")
-
-print("Comparison:", comparison)
-print("Column:", comparison_column)
-print("Positive:", positive)
-print("Negative:", negative)
-
-
-# ============================================================
-# CHECK METADATA
-# ============================================================
-
-if comparison_column not in meta.columns:
-
-    raise ValueError(
-        f"Column '{comparison_column}' "
-        f"not found in metadata."
-    )
-
-
-print("\nAvailable groups:")
-
-print(
-    meta[comparison_column]
-    .value_counts(dropna=False)
+meta = pd.read_csv(
+    args.metadata,
+    sep="\t",
+    index_col=0
 )
 
 
-# ============================================================
 # OUTPUT
-# ============================================================
-
-results_dir = os.path.join(
-    project_dir,
-    "results",
-    comparison,
-    "de_analysis"
-)
 
 os.makedirs(
-    results_dir,
+    args.output_dir,
+    exist_ok=True
+)
+os.makedirs(
+    args.output_dir,
     exist_ok=True
 )
 
-
-# ============================================================
 # TIMEPOINTS
-# ============================================================
 
 TIMEPOINTS = {
     "product": "product",
@@ -168,21 +116,12 @@ TIMEPOINTS = {
 }
 
 
-# ============================================================
 # DESEQ2
-# ============================================================
 
 for tp_name, tp_value in TIMEPOINTS.items():
 
-    print("\n")
-    print("========================================")
-    print("TIMEPOINT:", tp_name)
-    print("========================================")
-
-
-    # --------------------------------------------------------
     # Select metadata
-    # --------------------------------------------------------
+
 
     meta_tp = meta[
         (meta["timepoint"] == tp_value) &
@@ -369,22 +308,12 @@ for tp_name, tp_value in TIMEPOINTS.items():
     # Save all results
     # --------------------------------------------------------
 
-    results_file = os.path.join(
-        results_dir,
-        f"DESeq2_{tp_name}.tsv"
-    )
+    results_file = f"DESeq2_{tp_name}.tsv"
 
     results.to_csv(
         results_file,
         sep="\t"
     )
-
-
-    print(
-        "Saved:",
-        results_file
-    )
-
 
     # --------------------------------------------------------
     # DEG filtering
@@ -397,11 +326,7 @@ for tp_name, tp_value in TIMEPOINTS.items():
         )
     ].copy()
 
-
-    deg_file = os.path.join(
-        results_dir,
-        f"DEGs_{tp_name}.tsv"
-    )
+    deg_file = f"DEGs_{tp_name}.tsv"
 
     deg.to_csv(
         deg_file,
@@ -409,18 +334,4 @@ for tp_name, tp_value in TIMEPOINTS.items():
     )
 
 
-    print(
-        "Significant DEGs:",
-        len(deg)
-    )
 
-    print(
-        "Saved:",
-        deg_file
-    )
-
-
-print("\n")
-print("========================================")
-print("ANALYSIS FINISHED")
-print("========================================")

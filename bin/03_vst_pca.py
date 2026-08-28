@@ -1,37 +1,47 @@
-#%%
 import os
+import argparse
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from pydeseq2.dds import DeseqDataSet
 from sklearn.decomposition import PCA
 
-#Path
+# Arguments
 
-project_dir = "/Users/darakuzmina/Desktop/CAR_T"
-ann_dir = "/Users/darakuzmina/Desktop/crc_metastasis_analysis/data"
-figures_dir = os.path.join(project_dir, "figures", "QC") 
-os.makedirs(figures_dir, exist_ok=True)
-
-dir_proc = os.path.join(project_dir, "data", "processed")
-
-counts = pd.read_csv(
-    os.path.join(
-        dir_proc,
-        "counts.tsv"
-    ),
-    sep="\t",
-    index_col=0
+parser = argparse.ArgumentParser(
+    description="Normalize expression, vst transformation and create PCA plots"
 )
 
-meta = pd.read_csv(
-    os.path.join(
-        dir_proc,
-        "meta_analysis.tsv"
-    ),
-    sep="\t",
-    index_col=0
+parser.add_argument(
+    "--expression",
+    required=True
 )
+
+parser.add_argument(
+    "--clinical",
+    required=True
+)
+
+parser.add_argument(
+    "--output_dir",
+    required=True
+)
+
+parser.add_argument(
+    "--figures",
+    required=True
+)
+
+args = parser.parse_args()
+
+# Output directory
+
+os.makedirs(args.output_dir, exist_ok=True)
+os.makedirs(args.figures, exist_ok=True)
+
+# Load data
+counts = pd.read_csv(args.expression, sep="\t", index_col=0)
+meta = pd.read_csv(args.clinical, sep="\t", index_col=0)
 
 
 #1. DESeq2: design,normalization, vst and PCA
@@ -59,7 +69,7 @@ mat_vst = pd.DataFrame(
 expr_all = mat_vst.T  # genes X samples
 expr_all.index.name = "gene"
 
-expr_all.to_csv(os.path.join(dir_proc, "expr_all_vst.tsv"), sep="\t")
+expr_all.to_csv(os.path.join(args.output_dir, "expr_all_vst.tsv"), sep="\t")
 
 #2. PCA
 
@@ -82,18 +92,18 @@ pc_df = pc_df.join(meta)
 
 
 def make_pca(
+    data,
+    pca_object,
     hue,
     filename,
-    title=None,
-    style=None
-):
+    title=None):
 
     plt.figure(
         figsize=(7, 6)
     )
 
     sns.scatterplot(
-        data=pc_df,
+        data= data,
         x="PC1",
         y="PC2",
         hue=hue,
@@ -102,11 +112,11 @@ def make_pca(
     )
 
     plt.xlabel(
-        f"PC1 ({pca.explained_variance_ratio_[0]:.2%})"
+        f"PC1 ({pca_object.explained_variance_ratio_[0]:.2%})"
     )
 
     plt.ylabel(
-        f"PC2 ({pca.explained_variance_ratio_[1]:.2%})"
+        f"PC2 ({pca_object.explained_variance_ratio_[1]:.2%})"
     )
 
     if title:
@@ -116,7 +126,7 @@ def make_pca(
 
     plt.savefig(
         os.path.join(
-            figures_dir,
+            args.figures,
             filename
         ),
         dpi=300
@@ -126,12 +136,16 @@ def make_pca(
 
 
 make_pca(
+    pc_df,
+    pca,
     "group_analysis_1",
     "PCA_response.png",
     "PCA: response"
 )
 
 make_pca(
+    pc_df,
+    pca,
     "group_analysis_2",
     "PCA_original_groups.png",
     "PCA: original groups"
@@ -139,41 +153,52 @@ make_pca(
 
 
 make_pca(
+    pc_df,
+    pca,
     "response",
     "PCA_new_groups.png",
     "PCA: new groups"
 )
 
 make_pca(
+    pc_df,
+    pca,
     "aggressiveness",
     "PCA_aggressive.png",
     "PCA: aggressive"
 )
 
 make_pca(
+    pc_df,
+    pca,
     "bone_marrow",
     "PCA_bone_marrow.png",
     "PCA: bone_marrow"
 )
 
 make_pca(
+    pc_df,
+    pca,
     "lesion",
     "PCA_widespread.png",
     "PCA: widespread"
 )
 
 make_pca(
+    pc_df,
+    pca,
     "timepoint",
     "PCA_timepoint.png",
     "PCA: timepoint"
 )
 
 make_pca(
+    pc_df,
+    pca,
     "batch_nexp",
     "PCA_batch.png",
     "PCA: batch"
 )
-
 
 print("VST and PCA completed.")
 
@@ -228,14 +253,18 @@ def make_pca_timepoint(info, mat_exp, hue, title, filename):
     
     plt.savefig(
     os.path.join(
-    figures_dir, filename),dpi=300)
+    args.figures, filename),dpi=300)
     
     plt.close()
 
 make_pca_timepoint(meta_prod, mat_vst_prod, "group_analysis_1", "pca_product.png", "PCA: product")
 make_pca_timepoint(meta_d7, mat_vst_d7,"group_analysis_1", "pca_d7.png", "PCA: after d7")
 make_pca_timepoint(meta_d28, mat_vst_d28, "group_analysis_1", "pca_d28.png", "PCA: after d28")
-#ryazhik
+
+make_pca_timepoint(meta_prod, mat_vst_prod, "response", "pca_product_new.png", "PCA: product")
+make_pca_timepoint(meta_d7, mat_vst_d7,"response", "pca_d7_new.png", "PCA: after d7")
+make_pca_timepoint(meta_d28, mat_vst_d28, "response", "pca_d28_new.png", "PCA: after d28")
+
 
 
 

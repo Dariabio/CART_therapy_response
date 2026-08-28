@@ -4,14 +4,6 @@ import argparse
 import pandas as pd
 import gseapy as gp
 
-# Paths
-project_dir = "/Users/darakuzmina/Desktop/CAR_T"
-results_dir = os.path.join(project_dir, "results") 
-dir_raw = os.path.join(project_dir, "data", "raw")
-dir_proc = os.path.join(project_dir, "data", "processed")
-
-#
-
 parser = argparse.ArgumentParser()
 
 parser.add_argument(
@@ -19,19 +11,46 @@ parser.add_argument(
     required=True
 )
 
+parser.add_argument(
+    "--de_dir",
+    required=True
+)
+
+parser.add_argument(
+    "--panel_dir",
+    required=True
+)
+
+parser.add_argument(
+    "--output_dir",
+    required=True
+)
+
 args = parser.parse_args()
 
+
 comparison = args.comparison
+
+os.makedirs(
+    args.output_dir,
+    exist_ok=True
+)
+
+#Paths
+GSEA_DIR = args.output_dir
+
+DE_DIR = args.de_dir
 
 # 1. Build gene panels
 panels = {}
 # Panel 1
 gp1 = pd.read_csv(
     os.path.join(
-        dir_raw,
-        "gene_panel_1.csv"
-    )
+    args.panel_dir,
+    "gene_panel_1.csv"
 )
+    )
+
 for col in gp1.columns:
 
     genes = (
@@ -56,10 +75,10 @@ for col in gp1.columns:
 
 gp2 = pd.read_csv(
     os.path.join(
-       dir_raw,
-        "gene_panel_2.csv"
-    )
+    args.panel_dir,
+    "gene_panel_2.csv"
 )
+    )
 
 gp2["subpop"] = (
     gp2["Annotation"].astype(str)
@@ -88,10 +107,10 @@ for name, group in gp2.groupby(
 
 gp3 = pd.read_csv(
     os.path.join(
-        dir_raw,
-        "gene_panel_3.csv"
-    )
+    args.panel_dir,
+    "gene_panel_3.csv"
 )
+    )
 
 for col in gp3.columns:
 
@@ -112,10 +131,10 @@ for col in gp3.columns:
 
 gp4 = pd.read_csv(
     os.path.join(
-        dir_raw,
-        "gene_panel_4.csv"
-    )
+    args.panel_dir,
+    "gene_panel_4.csv"
 )
+    )
 
 for col in gp4.columns:
 
@@ -132,24 +151,6 @@ for col in gp4.columns:
     ] = genes
 
 # 2. Run GSEA
-
-#Paths
-GSEA_DIR = os.path.join(
-    results_dir,
-    comparison,
-    "ranked_gsea"
-)
-
-os.makedirs(
-    GSEA_DIR,
-    exist_ok=True
-)
-
-DE_DIR = os.path.join(
-    results_dir,
-    comparison,
-    "de_analysis"
-)
 
 # per each timepoint
 for short_name in [

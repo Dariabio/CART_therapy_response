@@ -1,29 +1,48 @@
 import os
+import argparse
 import pandas as pd
 import gseapy as gp
 
-# Paths
+parser = argparse.ArgumentParser()
 
-project_dir = "/Users/darakuzmina/Desktop/CAR_T"
-results_dir = os.path.join(project_dir, "results") 
-dir_raw = os.path.join(project_dir, "data", "raw")
-dir_proc = os.path.join(project_dir, "data", "processed")
+parser.add_argument(
+    "--expression",
+    required=True
+)
 
-OUT_DIR = os.path.join(results_dir,"ssgsea")
-os.makedirs(OUT_DIR, exist_ok=True)
+parser.add_argument(
+    "--panel_dir",
+    required=True
+)
+
+parser.add_argument(
+    "--output_dir",
+    required=True
+)
+
+args = parser.parse_args()
+
+
+os.makedirs(
+    args.output_dir,
+    exist_ok=True
+)
+
 
 # Load files
-expression = pd.read_csv(os.path.join(dir_proc, "expr_all_vst.tsv"), sep="\t", index_col=0)
+expression = pd.read_csv(args.expression, sep="\t", index_col=0)
 
 # 1. Build gene panels
+
 panels = {}
 # Panel 1
 gp1 = pd.read_csv(
     os.path.join(
-        dir_raw,
-        "gene_panel_1.csv"
-    )
+    args.panel_dir,
+    "gene_panel_1.csv"
 )
+    )
+
 for col in gp1.columns:
 
     genes = (
@@ -48,10 +67,10 @@ for col in gp1.columns:
 
 gp2 = pd.read_csv(
     os.path.join(
-       dir_raw,
-        "gene_panel_2.csv"
-    )
+    args.panel_dir,
+    "gene_panel_2.csv"
 )
+    )
 
 gp2["subpop"] = (
     gp2["Annotation"].astype(str)
@@ -80,10 +99,10 @@ for name, group in gp2.groupby(
 
 gp3 = pd.read_csv(
     os.path.join(
-        dir_raw,
-        "gene_panel_3.csv"
-    )
+    args.panel_dir,
+    "gene_panel_3.csv"
 )
+    )
 
 for col in gp3.columns:
 
@@ -104,10 +123,10 @@ for col in gp3.columns:
 
 gp4 = pd.read_csv(
     os.path.join(
-        dir_raw,
-        "gene_panel_4.csv"
-    )
+    args.panel_dir,
+    "gene_panel_4.csv"
 )
+    )
 
 for col in gp4.columns:
 
@@ -123,12 +142,13 @@ for col in gp4.columns:
         f"P4_{col}"
     ] = genes
 
+
 # 3. Run ssGSEA
 ss = gp.ssgsea(
     data=expression,
     gene_sets=panels,
-    outdir= OUT_DIR ,
-    permutation_num=0,# for ssGSEA
+    outdir= args.output_dir ,
+    permutation_num=0, # for ssGSEA
     min_size=3,
     max_size=500,
     seed=42
@@ -136,16 +156,15 @@ ss = gp.ssgsea(
 
 # saved results to read
 
-scores_raw = pd.read_csv(os.path.join(OUT_DIR, "gseapy.gene_set.ssgsea.report.csv"), sep=",")
+scores_raw = ss.res2d
 
-# scores_wide: samples × subpopulations
 scores_all = scores_raw.pivot_table(
     index="Name",
     columns="Term",
     values="NES"
 )
 
-scores_all.to_csv(os.path.join(OUT_DIR, "scores_all.csv"))
+scores_all.to_csv(os.path.join(args.output_dir, "scores_all.csv"))
 
 print("ssGSEA completed")
 

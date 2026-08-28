@@ -4,27 +4,20 @@ import pandas as pd
 from scipy.stats import mannwhitneyu
 from statsmodels.stats.multitest import multipletests
 
-# PATHS
-
-project_dir = "/Users/darakuzmina/Desktop/CAR_T"
-
-results_dir = os.path.join(
-    project_dir,
-    "results"
-)
-
-dir_proc = os.path.join(
-    project_dir,
-    "data",
-    "processed"
-)
-
-
-# COMMAND LINE ARGUMENT
-
+# ARGUMENTS
 
 parser = argparse.ArgumentParser(
     description="ssGSEA statistical comparison"
+)
+
+parser.add_argument(
+    "--metadata",
+    required=True
+)
+
+parser.add_argument(
+    "--scores_all",
+    required=True
 )
 
 parser.add_argument(
@@ -39,18 +32,24 @@ parser.add_argument(
     ]
 )
 
+parser.add_argument(
+    "--output_dir",
+    required=True
+)
+
 args = parser.parse_args()
+
 
 comparison = args.comparison
 
 # COMPARISON CONFIGURATION
 
-
 COMPARISONS = {
+
     "group_analysis_1": {
-                "column": "group_analysis_1",
-                "positive": "responder",
-                "negative": "nonresponder"
+        "column": "group_analysis_1",
+        "positive": "responder",
+        "negative": "nonresponder"
     },
 
     "response": {
@@ -88,31 +87,22 @@ negative = config["negative"]
 # LOAD DATA
 
 meta = pd.read_csv(
-    os.path.join(
-        dir_proc,
-        "meta_analysis.tsv"
-    ),
+    args.metadata,
     sep="\t",
     index_col=0
 )
 
 scores = pd.read_csv(
-    os.path.join(
-        results_dir,
-        "ssgsea",
-        "scores_all.csv"
-    ),
+    args.scores_all,
     sep=",",
     index_col=0
 )
 
-
 print("\nLoaded data:")
-print(f"Metadata: {meta.shape}")
-print(f"ssGSEA:   {scores.shape}")
+print("Metadata:", meta.shape)
+print("ssGSEA:", scores.shape)
 
 # MATCH SAMPLES
-
 
 common_samples = meta.index.intersection(
     scores.index
@@ -259,12 +249,10 @@ def test_ssgsea_comparison(
         exist_ok=True
     )
 
-
     output_file = os.path.join(
         output_dir,
         f"ssGSEA_{timepoint}.tsv"
     )
-
 
     result_df.to_csv(
         output_file,
@@ -277,21 +265,6 @@ def test_ssgsea_comparison(
         f"\nSaved: {output_file}"
     )
 
-
-    return result_df
-
-# OUTPUT DIRECTORY FOR CURRENT COMPARISON
-
-output_dir = os.path.join(
-    results_dir,
-    "ssgsea",
-    comparison
-)
-
-os.makedirs(
-    output_dir,
-    exist_ok=True
-)
 
 
 # RUN ANALYSIS FOR EACH TIMEPOINT
@@ -389,7 +362,7 @@ for short_name, timepoint in TIMEPOINTS.items():
 
     # Run statistical analysis
 
-    result = test_ssgsea_comparison(
+    test_ssgsea_comparison(
 
         meta_df=meta_tp,
 
@@ -403,10 +376,7 @@ for short_name, timepoint in TIMEPOINTS.items():
 
         timepoint=short_name,
 
-        output_dir=output_dir
-
+        output_dir= args.output_dir
     )
 
-
-    all_results[short_name] = result
 

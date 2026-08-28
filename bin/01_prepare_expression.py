@@ -1,24 +1,56 @@
 import os
+import argparse
 import pandas as pd
 import glob
 
+#Arguments
+parser = argparse.ArgumentParser(
+    description="Merge and annotate RNA-seq expression matrices"
+)
 
-# Paths
-project_dir = "/Users/darakuzmina/Desktop/CAR_T"
-ann_dir = "/Users/darakuzmina/Desktop/crc_metastasis_analysis/data"
-results_dir = os.path.join(project_dir, "results") 
-figures_dir = os.path.join(project_dir, "figures") 
-os.makedirs(results_dir, exist_ok=True)
-os.makedirs(figures_dir, exist_ok=True)
+parser.add_argument(
+    "--input_dir",
+    required=True,
+    help="Directory containing sample-level expression TSV files"
+)
 
-dir_raw = os.path.join(project_dir, "data", "raw")
-dir_proc = os.path.join(project_dir, "data", "processed")
+parser.add_argument(
+    "--annotation_dir",
+    required=True,
+    help="Directory containing gene2ensembl.gz and Homo_sapiens.gene_info.gz"
+)
 
-# 1. Merging all samples in one matrix expression
-# raw counts
-folder = (os.path.join(dir_raw, "sample_expression"))
-pattern = os.path.join(folder, "*.tsv")
-files = sorted(glob.glob(pattern))
+parser.add_argument(
+    "--output_dir",
+    required=True,
+    help="Output directory"
+)
+
+args = parser.parse_args()
+
+input_dir = args.input_dir
+ann_dir = args.annotation_dir
+output_dir = args.output_dir
+
+os.makedirs(output_dir, exist_ok=True)
+
+# Input files
+
+pattern = os.path.join(
+    input_dir,
+    "*.tsv"
+)
+
+files = sorted(
+    glob.glob(pattern)
+)
+
+if not files:
+    raise FileNotFoundError(
+        f"No TSV files found in {input_dir}"
+    )
+
+print(f"Found {len(files)} sample files")
 
 # list of dfs
 dfs1 = []
@@ -43,18 +75,18 @@ merged = dfs1[0]
 for df in dfs1[1:]:
     merged = pd.merge(merged, df, on="target_id", how="outer")
 
-merged.to_csv(os.path.join(dir_raw, "expression_tpm.tsv"), sep="\t")
+merged.to_csv(os.path.join(output_dir, "expression_tpm.tsv"), sep="\t")
 
 merged = dfs2[0]
 for df in dfs2[1:]:
     merged = pd.merge(merged, df, on="target_id", how="outer")
 
-merged.to_csv(os.path.join(dir_raw, "expression_raw.tsv"), sep="\t")
+merged.to_csv(os.path.join(output_dir, "expression_raw.tsv"), sep="\t")
 
 # 2. Preprocess data
 # Annotation and filtering
-expression = pd.read_csv(os.path.join(dir_raw, "expression_raw.tsv"), sep="\t")
-expression_tpm = pd.read_csv(os.path.join(dir_raw, "expression_tpm.tsv"), sep="\t")
+expression = pd.read_csv(os.path.join(output_dir, "expression_raw.tsv"), sep="\t")
+expression_tpm = pd.read_csv(os.path.join(output_dir, "expression_tpm.tsv"), sep="\t")
 
 def annotate_enst_ids_ncbi(expression, ann_dir, expr_type =None, id_col=None):
     df = expression.copy()
@@ -141,9 +173,9 @@ expression_tpm = annotate_enst_ids_ncbi(
 expression = annotate_enst_ids_ncbi(
     expression, ann_dir=ann_dir, id_col='target_id', expr_type="raw")
 
-expression_tpm.to_csv(os.path.join(dir_raw, "expression_tpm_ann.tsv"), sep="\t")
+expression_tpm.to_csv(os.path.join(output_dir, "expression_tpm_ann.tsv"), sep="\t")
 
-expression.to_csv(os.path.join(dir_raw, "expression_raw_ann.tsv"), sep="\t")
+expression.to_csv(os.path.join(output_dir, "expression_raw_ann.tsv"), sep="\t")
 
 print("Expression preparation completed")
 

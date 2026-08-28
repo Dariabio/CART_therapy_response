@@ -1,96 +1,40 @@
 import os
 import argparse
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-# 1. Arguments
-
-
+#  Arguments
 parser = argparse.ArgumentParser()
 
 parser.add_argument(
     "--comparison",
-    required=True,
-    choices=["group_analysis_1",
-        "response",
-        "aggressiveness",
-        "bone_marrow",
-        "lesion"
-    ]
+    required=True
+)
+
+parser.add_argument(
+    "--de_dir",
+    required=True
+)
+
+parser.add_argument(
+    "--figures",
+    required=True
 )
 
 args = parser.parse_args()
 
 comparison = args.comparison
 
-# 2. Paths
-
-
-project_dir = "/Users/darakuzmina/Desktop/CAR_T"
-
-results_dir = os.path.join(
-    project_dir,
-    "results",
-    comparison,
-    "de_analysis"
+os.makedirs(
+    args.output_dir,
+    exist_ok=True
 )
 
-figures_dir = os.path.join(
-    project_dir,
-    "figures",
-    comparison,
-    "de_analysis"
-)
 
-os.makedirs(figures_dir, exist_ok=True)
-
-# 3. Comparison configuration
-
-
-COMPARISONS = {
-    "group_analysis_1": {
-            "positive": "responder",
-            "negative": "nonresponder",
-            "label": "Responder vs Nonresponder"
-    },
-
-    "response": {
-        "positive": "responder",
-        "negative": "nonresponder",
-        "label": "Responder vs Nonresponder"
-    },
-
-    "aggressiveness": {
-        "positive": "aggressive",
-        "negative": "indolent",
-        "label": "Aggressive vs Indolent"
-    },
-
-    "bone_marrow": {
-        "positive": "bone_marrow_positive",
-        "negative": "bone_marrow_negative",
-        "label": "Bone marrow positive vs negative"
-    },
-
-    "lesion": {
-        "positive": "widespread",
-        "negative": "localized",
-        "label": "Widespread vs Localized"
-    }
-}
-
-config = COMPARISONS[comparison]
-
-positive = config["positive"]
-negative = config["negative"]
-comparison_label = config["label"]
-
-
-# 4. Volcano plot function
+# Volcano plot function
 
 
 def volcano_plot(
@@ -285,7 +229,7 @@ def volcano_plot(
     # --------------------------------------------------------
 
     output_file = os.path.join(
-        outdir,
+        args.figures,
         f"Volcano_DESeq2_{comparison}_{timepoint}.png"
     )
 
@@ -297,9 +241,6 @@ def volcano_plot(
 
     plt.close()
 
-    print(
-        f"Saved: {output_file}"
-    )
 
 
 # ============================================================
@@ -316,7 +257,7 @@ TIMEPOINTS = {
 for timepoint, filename in TIMEPOINTS.items():
 
     results_file = os.path.join(
-        results_dir,
+        args.de_dir,
         filename
     )
 
@@ -341,9 +282,9 @@ for timepoint, filename in TIMEPOINTS.items():
     volcano_plot(
         de_results=results,
         comparison=comparison,
-        comparison_label=comparison_label,
+        comparison_label=comparison,
         timepoint=timepoint,
-        outdir=figures_dir
+        outdir=args.figures
     )
 
 
