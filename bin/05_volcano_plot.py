@@ -29,7 +29,7 @@ args = parser.parse_args()
 comparison = args.comparison
 
 os.makedirs(
-    args.output_dir,
+    args.figures,
     exist_ok=True
 )
 
@@ -286,6 +286,7 @@ for timepoint, filename in TIMEPOINTS.items():
         timepoint=timepoint,
         outdir=args.figures
     )
+
 
 
 print("\n======================================")

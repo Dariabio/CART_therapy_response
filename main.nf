@@ -198,7 +198,7 @@ process VOLCANO_PLOTS {
         ${projectDir}/bin/05_volcano_plot.py \
         --comparison ${comparison} \
         --de_dir de_results \
-        --output_dir volcano_plots
+        --figures volcano_plots
     """
 }
 
@@ -342,13 +342,14 @@ process PLOTS_GSEA {
     script:
 
     """
-    mkdir -p gsea_plots 
-    mkdir -p stat_results 
-    mkdir -p de_results 
-    mkdir -p ranked_gsea 
-    cp ${stat_results} stat_results/ 
-    cp ${de_results} de_results/ 
-    cp -r ${ranked_gsea_dir} ranked_gsea/
+    mkdir -p gsea_plots
+    mkdir -p stat_results
+    mkdir -p de_results
+    
+
+    cp -r ${stat_results}/* stat_results/
+    cp ${de_results} de_results/
+
 
     /opt/anaconda3/envs/crc_scanpy/bin/python \
         ${projectDir}/bin/09_visualization_GSEA.py \
@@ -553,20 +554,34 @@ workflow {
 
     // join data by comparison group
     gsea_results = STAT_SSGSEA.out.ssgsea_statistics
-    .join(
-        RANKED_GSEA.out.ranked_gsea_results
-    )
-    .join(
-        DE_ANALYSIS.out.de_results
-    )
+        .join(RANKED_GSEA.out.ranked_gsea_results)
+        .join(DE_ANALYSIS.out.de_results)
+        .map { comparison, stat_results, ranked_gsea_dir, de_results ->
+            tuple(
+                comparison,
+                stat_results,
+                ranked_gsea_dir,
+                de_results
+            )
+        }
+
+
+
+
+    // ========================================================
+    // CREATE VALUE CHANNELS
+    // ========================================================
+
+    metadata_value = PREPARE_METADATA.out.meta_analysis.first()
+    scores_value = SSGSEA.out.scores_all.first()
 
     // ========================================================
     // PROCESS 9
     // ========================================================
 
     PLOTS_GSEA(
-        PREPARE_METADATA.out.meta_analysis,
-        SSGSEA.out.scores_all,
+        metadata_value,
+        scores_value,
         gsea_results
     )
 

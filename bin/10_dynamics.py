@@ -1,6 +1,4 @@
-# ============================================================
-# 10_dynamics.py
-#
+
 # Longitudinal ssGSEA analysis for multiple comparisons
 #
 # Comparisons:
@@ -17,8 +15,6 @@
 #   5. Forest plots
 #   6. Trajectory plots
 #   7. Final summary
-# ============================================================
-
 
 import os
 import argparse
@@ -34,30 +30,11 @@ import statsmodels.formula.api as smf
 from statsmodels.stats.multitest import multipletests
 from scipy.stats import mannwhitneyu
 
+#  Arguments
 
-# ============================================================
-# 1. PATHS
-# ============================================================
-
-project_dir = "/Users/darakuzmina/Desktop/CAR_T"
-
-results_dir = os.path.join(
-    project_dir,
-    "results"
+parser = argparse.ArgumentParser(
+    description="Longitudinal ssGSEA analysis for multiple comparisons"
 )
-
-data_dir = os.path.join(
-    project_dir,
-    "data",
-    "processed"
-)
-
-
-# ============================================================
-# 2. ARGUMENTS
-# ============================================================
-
-parser = argparse.ArgumentParser()
 
 parser.add_argument(
     "--comparison",
@@ -71,14 +48,31 @@ parser.add_argument(
     ]
 )
 
+parser.add_argument(
+    "--metadata",
+    required=True
+)
+
+parser.add_argument(
+    "--scores_all",
+    required=True
+)
+
+parser.add_argument(
+    "--output_dir",
+    required=True
+)
+
 args = parser.parse_args()
 
 comparison = args.comparison
 
+os.makedirs(
+    args.output_dir,
+    exist_ok=True
+)
 
-# ============================================================
-# 3. COMPARISON CONFIGURATION
-# ============================================================
+# COMPARISON CONFIGURATION
 
 COMPARISONS = {
 
@@ -120,48 +114,7 @@ comparison_column = config["column"]
 positive = config["positive"]
 negative = config["negative"]
 
-
-print("\n==========================================")
-print("LONGITUDINAL ssGSEA ANALYSIS")
-print("==========================================")
-print(f"Comparison: {comparison}")
-print(f"Column:     {comparison_column}")
-print(f"Positive:   {positive}")
-print(f"Negative:   {negative}")
-print("==========================================\n")
-
-
-# ============================================================
-# 4. OUTPUT DIRECTORIES
-# ============================================================
-
-comparison_results_dir = os.path.join(
-    results_dir,
-    comparison,
-    "dynamics"
-)
-
-comparison_figures_dir = os.path.join(
-    project_dir,
-    "figures",
-    comparison,
-    "dynamics"
-)
-
-os.makedirs(
-    comparison_results_dir,
-    exist_ok=True
-)
-
-os.makedirs(
-    comparison_figures_dir,
-    exist_ok=True
-)
-
-
-# ============================================================
-# 5. CONSTANTS
-# ============================================================
+# CONSTANTS
 
 patient_col = "patient_id"
 timepoint_col = "timepoint"
@@ -181,39 +134,21 @@ group_order = [
     positive
 ]
 
-
-# ============================================================
-# 6. LOAD DATA
-# ============================================================
+# LOAD DATA
 
 scores_all = pd.read_csv(
-    os.path.join(
-        results_dir,
-        "ssgsea",
-        "scores_all.csv"
-    ),
+    args.scores_all,
+    sep=",",
     index_col=0
 )
 
 meta_all = pd.read_csv(
-    os.path.join(
-        data_dir,
-        "meta_all.csv"
-    ),
+    args.metadata,
+    sep="\t",
     index_col=0
 )
 
-
-print("Loaded ssGSEA:")
-print(scores_all.shape)
-
-print("\nLoaded metadata:")
-print(meta_all.shape)
-
-
-# ============================================================
-# 7. MATCH SAMPLES
-# ============================================================
+# MATCH SAMPLES
 
 common_samples = (
     scores_all.index
@@ -231,9 +166,7 @@ meta = meta_all.loc[
 ].copy()
 
 
-# ============================================================
-# 8. KEEP ONLY TWO GROUPS FOR THIS COMPARISON
-# ============================================================
+# KEEP ONLY TWO GROUPS FOR THIS COMPARISON
 
 comparison_mask = meta[
     comparison_column
@@ -261,8 +194,7 @@ print(
 )
 
 
-# ============================================================
-# 9. SIGNATURES
+# SIGNATURES
 # ============================================================
 
 signature_cols = list(
@@ -271,7 +203,7 @@ signature_cols = list(
 
 
 # ============================================================
-# 10. PREPARE DATA
+# PREPARE DATA
 # ============================================================
 
 df = meta[
@@ -545,7 +477,7 @@ for term in model_results["term"].unique():
 
 model_results.to_csv(
     os.path.join(
-        comparison_results_dir,
+        args.output_dir,
         "mixed_model_all_terms.tsv"
     ),
     sep="\t",
@@ -597,7 +529,7 @@ interaction = interaction.sort_values(
 
 interaction.to_csv(
     os.path.join(
-        comparison_results_dir,
+        args.output_dir,
         "mixed_model_interactions.tsv"
     ),
     sep="\t",
@@ -843,7 +775,7 @@ interaction_d28_term = (
 forest_plot_mixed_term(
     interaction,
     interaction_d7_term,
-    comparison_figures_dir,
+    args.output_dir,
     title=(
         f"Product → d7 trajectory\n"
         f"{positive} vs {negative}"
@@ -854,7 +786,7 @@ forest_plot_mixed_term(
 forest_plot_mixed_term(
     interaction,
     interaction_d28_term,
-    comparison_figures_dir,
+    args.output_dir,
     title=(
         f"Product → d28 trajectory\n"
         f"{positive} vs {negative}"
@@ -1026,7 +958,7 @@ if not delta_results.empty:
 
     delta_results.to_csv(
         os.path.join(
-            comparison_results_dir,
+            args.output_dir,
             "delta_analysis.tsv"
         ),
         sep="\t",
@@ -1284,7 +1216,7 @@ def delta_effect_heatmap(
 
 delta_effect_heatmap(
     delta_results,
-    comparison_figures_dir
+    args.output_dir
 )
 
 
@@ -1472,7 +1404,7 @@ for signature in (
 
     plt.savefig(
         os.path.join(
-            comparison_figures_dir,
+            args.output_dir,
             f"trajectory_{safe_signature}.png"
         ),
         dpi=300,
@@ -1743,7 +1675,7 @@ final_summary[
 
 final_summary.to_csv(
     os.path.join(
-        comparison_results_dir,
+        args.output_dir,
         "FINAL_signature_longitudinal_summary.tsv"
     ),
     sep="\t",
@@ -1874,59 +1806,10 @@ final_summary[
 
 final_summary.to_csv(
     os.path.join(
-        comparison_results_dir,
+        args.output_dir,
         "FINAL_signature_longitudinal_summary.tsv"
     ),
     sep="\t",
     index=False
 )
 
-
-# ============================================================
-# 21. PRINT SUMMARY
-# ============================================================
-
-print(
-    final_summary[
-        [
-            "signature",
-
-            "interaction_d7",
-            "FDR_interaction_d7",
-
-            "delta_effect_d7",
-            "FDR_delta_d7",
-
-            "interaction_d28",
-            "FDR_interaction_d28",
-
-            "delta_effect_d28",
-            "FDR_delta_d28",
-
-            "interpretation"
-        ]
-    ].head(30).to_string(
-        index=False
-    )
-)
-
-
-print("\n==========================================")
-print("ANALYSIS COMPLETED")
-print("==========================================")
-
-print(
-    f"Comparison: {comparison}"
-)
-
-print(
-    f"Results:\n"
-    f"{comparison_results_dir}"
-)
-
-print(
-    f"Figures:\n"
-    f"{comparison_figures_dir}"
-)
-
-print("==========================================\n")
