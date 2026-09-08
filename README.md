@@ -17,6 +17,25 @@ Statistical comparison of ssGSEA scores between clinical groups
 Visualization and integration of GSEA results
 Longitudinal analysis of CAR-T signatures across timepoints
 
+# Project structure
+
+The analysis is organized as a Nextflow workflow. Individual analysis steps are implemented as Python scripts in the `bin/` directory.
+
+### `bin/`
+
+Contains the main scripts executed by the Nextflow workflow:
+
+- `01_prepare_expression.py ` — preprocessing of expression data
+- `02_prepare_metadata.py` — preprocessing of clinical data
+- `03_vst_pca.py` — normalization and PCA plots
+- `04_de.py` — differential expression analysis
+- `05_volcano_plot.py` — creation of Volcano plots
+- `06_ranked_GSEA.py` — preparation of gene panels and running ranked GSEA
+- `07_ssgsea.py` — running ssGSEA
+- `08_ssgsea_statistics.py` — Statistical analysis of ssGSEA score
+- `09_visualization_GSEA.py` — heatmaps, dotplots of ranked GSEA, ssGSEA results
+- `10_dynamics.py` — Interaction and delta analysis
+
 # INPUT
 
 Four CAR-T-related panels are currently used for ssGSEA and ranked GSEA analyses
@@ -252,7 +271,7 @@ conda env create -f environment.yml
 
 Activate it:
 
-conda activate crc-analysis
+conda activate cart-analysis
 
 Make sure Nextflow is installed:
 
