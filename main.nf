@@ -398,6 +398,86 @@ process DYNAMICS_GSEA {
     """
 }
 
+// ============================================================
+// PROCESS 11 — GLOBAL RANKED GSEA
+// ============================================================
+
+process GLOBAL_GSEA {
+
+    tag "Global ranked GSEA - ${comparison}"
+
+    publishDir(
+        "${params.results_dir}/11_global_gsea/${comparison}",
+        mode: "copy"
+    )
+
+    input:
+
+    tuple val(comparison), path(de_files)
+
+    output:
+
+    tuple val(comparison), path("global_gsea"), emit: global_gsea_results
+
+    script:
+
+    """
+    mkdir -p de_results
+    mkdir -p global_gsea
+
+    cp ${de_files} de_results/
+
+    /opt/anaconda3/envs/crc_scanpy/bin/python \
+        ${projectDir}/bin/11_global_gsea.py \
+        --comparison ${comparison} \
+        --de_dir de_results \
+        --output_dir global_gsea
+    """
+}
+
+// ============================================================
+// PROCESS 12 — Timepoint analysis, DE, clustering and global GSEA
+// ============================================================
+
+process TIMEPOINT_ANALYSIS {
+
+    tag "Timepoint analysis"
+
+    publishDir(
+        "${params.results_dir}/12_timepoints_analysis",
+        mode: "copy"
+    )
+
+    input:
+
+    path expr_all_vst
+    path counts
+    path metadata
+
+    output:
+    
+    path "DESeq2_*.tsv", emit: timepoint_de_results
+    path "DEGs_*.tsv", emit: timepoint_degs
+    path "global_gsea", emit: timepoint_global_gsea
+    path "figures"
+
+    script:
+
+    """
+    mkdir -p global_gsea
+    mkdir -p figures
+
+    /opt/anaconda3/envs/crc_scanpy/bin/python \
+        ${projectDir}/bin/12_timepoint_analysis.py \
+        --expr_all_vst ${expr_all_vst} \
+        --counts ${counts} \
+        --metadata ${metadata} \
+        --output_dir . \
+        --figures figures
+    """
+}
+
+
 
 // ============================================================
 // WORKFLOW
@@ -594,4 +674,22 @@ workflow {
         SSGSEA.out.scores_all,
         comparisons
     )
+
+    // ========================================================
+    // PROCESS 11
+    // ========================================================
+
+    GLOBAL_GSEA(DE_ANALYSIS.out.de_results)
+   
+    // ========================================================
+    // PROCESS 12
+    // ========================================================
+    TIMEPOINT_ANALYSIS(
+        PREPARE_VST_PCA.out.expr_all_vst,
+        PREPARE_METADATA.out.counts,
+        PREPARE_METADATA.out.meta_analysis
+
+    )
+
+    
 }
