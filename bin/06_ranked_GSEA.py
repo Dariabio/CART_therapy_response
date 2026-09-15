@@ -150,6 +150,34 @@ for col in gp4.columns:
         f"P4_{col}"
     ] = genes
 
+# Panel 5
+gp5 = pd.read_csv(
+    os.path.join(
+    args.panel_dir,
+    "gene_panel_5.csv"
+)
+    )
+
+for col in gp5.columns:
+
+    genes = (
+        gp5[col]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .tolist()
+    )
+
+    genes = [
+        g for g in genes
+        if g != "nan"
+    ]
+
+    panels[
+        f"P5_{col}"
+    ] = genes
+
+
 # 2. Run GSEA
 
 # per each timepoint
