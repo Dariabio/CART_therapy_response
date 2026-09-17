@@ -600,8 +600,11 @@ def load_ssgsea_results(
 # 5. ssGSEA BOXPLOTS
 # ============================================================
 
+# ============================================================
+# 5. ssGSEA BOXPLOTS
+# ============================================================
+
 def make_ssgsea_boxplots(
-    top_n=10,
     p_cutoff=0.05
 ):
 
@@ -616,7 +619,7 @@ def make_ssgsea_boxplots(
     )
 
     # --------------------------------------------------------
-    # Load all three timepoints
+    # Load ssGSEA statistics for all three timepoints
     # --------------------------------------------------------
 
     gsea_results = {}
@@ -628,10 +631,11 @@ def make_ssgsea_boxplots(
             short_name
         )
 
-        if res is not None:
+        if res is not None and not res.empty:
+
             gsea_results[
                 short_name
-            ] = res
+            ] = res.copy()
 
     if not gsea_results:
 
@@ -642,100 +646,129 @@ def make_ssgsea_boxplots(
         return
 
     # --------------------------------------------------------
-    # Top signatures according to PRODUCT
-    # --------------------------------------------------------
-
-    if "product" not in gsea_results:
-
-        print(
-            "No product ssGSEA results."
-        )
-
-        return
-
-    product_res = gsea_results[
-        "product"
-    ]
-
-    top_signatures = (
-        product_res
-        .sort_values(
-            "p_value"
-        )
-        .head(top_n)
-        ["subpopulation"]
-        .tolist()
-    )
-
-    print(
-        "\nTop ssGSEA signatures "
-        "for boxplots:"
-    )
-
-    for sig in top_signatures:
-        print(
-            f"  {sig}"
-        )
-
-    # --------------------------------------------------------
-    # Plot
+    # Process EACH timepoint separately
     # --------------------------------------------------------
 
     plots_log = []
 
-    for signature in top_signatures:
+    for short_name in TIMEPOINTS:
 
-        for short_name in TIMEPOINTS:
+        current_res = gsea_results.get(
+            short_name
+        )
 
-            current_res = (
-                gsea_results
-                .get(short_name)
+        if (
+            current_res is None
+            or current_res.empty
+        ):
+            print(
+                f"No ssGSEA results for "
+                f"{short_name}"
+            )
+            continue
+
+        # ----------------------------------------------------
+        # Significant signatures at this timepoint
+        # ----------------------------------------------------
+
+        current_res = current_res.copy()
+
+        current_res["p_value"] = pd.to_numeric(
+            current_res["p_value"],
+            errors="coerce"
+        )
+
+        current_res["FDR"] = pd.to_numeric(
+            current_res["FDR"],
+            errors="coerce"
+        )
+
+        significant = current_res[
+            current_res["p_value"] < p_cutoff
+        ].copy()
+
+        # Remove duplicated signatures if present
+        significant = significant.drop_duplicates(
+            subset="subpopulation"
+        )
+
+        # Sort by p-value
+        significant = significant.sort_values(
+            "p_value"
+        )
+
+        print(
+            f"\n{short_name}: "
+            f"{len(significant)} significant "
+            f"ssGSEA signatures "
+            f"(p < {p_cutoff})"
+        )
+
+        if significant.empty:
+
+            print(
+                f"No significant signatures "
+                f"for {short_name}"
             )
 
-            if (
-                current_res is None
-                or current_res.empty
-            ):
-                continue
+            continue
 
-            sig_stats = current_res[
-                current_res[
-                    "subpopulation"
-                ] == signature
+        # ----------------------------------------------------
+        # Metadata and scores for this timepoint
+        # ----------------------------------------------------
+
+        meta_tp = meta_by_tp.get(
+            short_name
+        )
+
+        scores_tp = scores_by_tp.get(
+            short_name
+        )
+
+        if (
+            meta_tp is None
+            or scores_tp is None
+        ):
+            print(
+                f"Missing metadata or scores "
+                f"for {short_name}"
+            )
+            continue
+
+        # ----------------------------------------------------
+        # Plot EVERY significant signature
+        # ----------------------------------------------------
+
+        for _, sig_stats in significant.iterrows():
+
+            signature = sig_stats[
+                "subpopulation"
             ]
 
-            if sig_stats.empty:
-                continue
-
             p_value = float(
-                sig_stats[
-                    "p_value"
-                ].iloc[0]
+                sig_stats["p_value"]
             )
 
             fdr = float(
-                sig_stats[
-                    "FDR"
-                ].iloc[0]
+                sig_stats["FDR"]
             )
 
             # ------------------------------------------------
-            # Only p < 0.05
+            # Check signature exists in score matrix
             # ------------------------------------------------
 
-            if p_value >= p_cutoff:
-                continue
-
-            meta_tp = meta_by_tp[
-                short_name
-            ]
-
-            scores_tp = scores_by_tp[
-                short_name
-            ]
-
             if signature not in scores_tp.columns:
+
+                print(
+                    f"Signature not found in "
+                    f"scores: {signature}"
+                )
+
                 continue
+
+            # ------------------------------------------------
+            # Prepare plotting dataframe
+            # ------------------------------------------------
 
             plot_df = pd.DataFrame(
                 {
@@ -751,6 +784,15 @@ def make_ssgsea_boxplots(
                 }
             )
 
+            # Remove missing values
+            plot_df = plot_df.dropna(
+                subset=[
+                    "score",
+                    "group"
+                ]
+            )
+
+            # Keep only comparison groups
             plot_df = plot_df[
                 plot_df["group"].isin(
                     [
@@ -761,6 +803,13 @@ def make_ssgsea_boxplots(
             ]
 
             if plot_df.empty:
+
+                print(
+                    f"No data for "
+                    f"{signature} — "
+                    f"{short_name}"
+                )
+
                 continue
 
             # ------------------------------------------------
@@ -793,6 +842,10 @@ def make_ssgsea_boxplots(
                 jitter=0.2
             )
 
+            # ------------------------------------------------
+            # Title
+            # ------------------------------------------------
+
             plt.title(
                 f"{signature}\n"
                 f"{short_name} "
@@ -809,6 +862,10 @@ def make_ssgsea_boxplots(
             )
 
             plt.tight_layout()
+
+            # ------------------------------------------------
+            # Save
+            # ------------------------------------------------
 
             filename = (
                 f"Boxplot_"
@@ -831,11 +888,20 @@ def make_ssgsea_boxplots(
 
             plots_log.append(
                 {
-                    "Signature": signature,
-                    "Timepoint": short_name,
-                    "p_value": p_value,
-                    "FDR": fdr,
-                    "File_Name": filename
+                    "Signature":
+                    signature,
+
+                    "Timepoint":
+                    short_name,
+
+                    "p_value":
+                    p_value,
+
+                    "FDR":
+                    fdr,
+
+                    "File_Name":
+                    filename
                 }
             )
 
@@ -843,10 +909,47 @@ def make_ssgsea_boxplots(
                 f"Saved: {output_file}"
             )
 
+    # --------------------------------------------------------
+    # Save log of all generated plots
+    # --------------------------------------------------------
 
+    if plots_log:
+
+        plots_log_df = pd.DataFrame(
+            plots_log
+        )
+
+        log_file = os.path.join(
+            boxplot_dir,
+            "ssGSEA_boxplots_summary.tsv"
+        )
+
+        plots_log_df.to_csv(
+            log_file,
+            sep="\t",
+            index=False
+        )
+
+        print(
+            f"\nBoxplot summary saved to: "
+            f"{log_file}"
+        )
+
+    else:
+
+        print(
+            "\nNo significant ssGSEA "
+            "boxplots were generated."
+        )
+
+
+# ============================================================
 # RUN ssGSEA BOXPLOTS
+# ============================================================
 
-make_ssgsea_boxplots()
+make_ssgsea_boxplots(
+    p_cutoff=0.05
+)
 
 # ============================================================
 # 6. LOAD RANKED GSEA RESULTS

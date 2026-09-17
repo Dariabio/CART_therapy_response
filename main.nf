@@ -342,6 +342,7 @@ process PLOTS_GSEA {
     script:
 
     """
+    echo "PLOTS_GSEA UPDATED VERSION"
     mkdir -p gsea_plots
     mkdir -p stat_results
     mkdir -p de_results
@@ -458,17 +459,18 @@ process TIMEPOINT_ANALYSIS {
     
     path "DESeq2_*.tsv", emit: timepoint_de_results
     path "DEGs_*.tsv", emit: timepoint_degs
-    path "global_gsea", emit: timepoint_global_gsea
+    path "timepoint_gsea", emit: timepoint_global_gsea
     path "figures"
 
     script:
 
     """
-    mkdir -p global_gsea
+
+    mkdir -p timepoint_gsea
     mkdir -p figures
 
     /opt/anaconda3/envs/crc_scanpy/bin/python \
-        ${projectDir}/bin/12_timepoint_analysis.py \
+        ${projectDir}/bin/12_timepoints_analysis.py \
         --expr_all_vst ${expr_all_vst} \
         --counts ${counts} \
         --metadata ${metadata} \
@@ -476,6 +478,101 @@ process TIMEPOINT_ANALYSIS {
         --figures figures
     """
 }
+
+// ============================================================
+// PROCESS 13 — Create signature
+// ============================================================
+
+
+process SIGNATURE_ANALYSIS {
+
+    tag "Response signature discovery in product and statistics"
+
+    publishDir(
+        "${params.results_dir}/13_signature",
+        mode: "copy"
+    )
+
+    input:
+
+    path expr_all_vst
+    path metadata
+    tuple val(comparison), path(de_product)
+
+    output:
+    
+    // Signature files
+    path "CAR_T_response_signature.tsv"
+    path "product_significant_DEGs.tsv"
+        
+    // Logistic regression files
+    path "signature_logistic_regression_data.tsv"
+    path "logistic_univariate.tsv"
+    path "logistic_multivariable.tsv"
+    
+    path "figures"
+
+    script:
+
+    """
+    echo "SIGNATURE_ANALYSIS UPDATED VERSION"
+    mkdir -p figures
+
+    /opt/anaconda3/envs/crc_scanpy/bin/python \
+        ${projectDir}/bin/13_signature.py \
+        --expr_all_vst ${expr_all_vst} \
+        --metadata ${metadata} \
+        --de_product ${de_product} \
+        --output_dir . \
+        --figures figures
+    """
+}
+
+// ============================================================
+// PROCESS 14 — Signatures statistics
+// ============================================================
+
+
+process GSEA_SIGNATURES_ANALYSIS {
+
+    tag "GSEA signatures univariate and multivariate models"
+
+    publishDir(
+        "${params.results_dir}/14_signature_statistics",
+        mode: "copy"
+    )
+
+    input:
+
+    path metadata
+    path scores_all 
+    tuple val(comparison), path(gsea_response)
+
+    output:
+
+    path "logistic_univariate.tsv" 
+    path "logistic_multivariable.tsv" 
+    path "patient_ssgsea_response_data.tsv" 
+    path "response_gsea_pathways_used.tsv"
+    
+
+    script:
+
+    """
+    echo "GSEA_SIGNATURES_ANALYSIS update4"
+    echo "Comparison: ${comparison}"
+    echo "GSEA response file: ${gsea_response}"
+
+    /opt/anaconda3/envs/crc_scanpy/bin/python \
+        ${projectDir}/bin/14_signature_statistics.py \
+        --metadata ${metadata} \
+        --scores_all ${scores_all} \
+        --gsea_response ${gsea_response} \
+        --timepoint product \
+        --output_dir .
+    """
+}
+
 
 
 
@@ -594,6 +691,37 @@ workflow {
         comparisons
     )
 
+    response_de_product = DE_ANALYSIS.out.de_results
+    .filter { comparison, de_files ->
+        comparison == "response"
+    }
+    .map { comparison, de_files ->
+
+        println "===================================="
+        println "SIGNATURE INPUT"
+        println "Comparison: ${comparison}"
+        println "DE files:"
+
+        de_files.each { file ->
+            println "  ${file.name}"
+        }
+
+        def product_file = de_files.find {
+            it.name == "DESeq2_product.tsv"
+        }
+
+        if (product_file == null) {
+            error(
+                "DESeq2_product.tsv was not found for ${comparison}"
+            )
+        }
+
+        println "Selected product file: ${product_file.name}"
+        println "===================================="
+
+        tuple(comparison, product_file)
+    }
+
 
     // ========================================================
     // PROCESS 5
@@ -690,6 +818,76 @@ workflow {
         PREPARE_METADATA.out.meta_analysis
 
     )
+
+
+    // ========================================================
+    // PROCESS 13
+    // ========================================================
+
+    SIGNATURE_ANALYSIS(
+    PREPARE_VST_PCA.out.expr_all_vst,
+    PREPARE_METADATA.out.meta_analysis,
+    response_de_product
+)
+   
+
+
+    response_rankedgsea_product = (
+    RANKED_GSEA.out.ranked_gsea_results
+    .filter { comparison, ranked_gsea_dir ->
+        comparison == "response"
+    }
+    .map { comparison, ranked_gsea_dir ->
+
+        println "===================================="
+        println "SIGNATURE INPUT"
+        println "Comparison: ${comparison}"
+        println "Ranked GSEA directory:"
+        println "  ${ranked_gsea_dir}"
+
+        // ----------------------------------------------------
+        // Product GSEA file
+        // ranked_gsea/product/gseapy.gene_set.prerank.report.csv
+        // ----------------------------------------------------
+
+        def product_file = ranked_gsea_dir
+            .resolve("product")
+            .resolve("gseapy.gene_set.prerank.report.csv")
+
+        println "Expected product GSEA file:"
+        println "  ${product_file}"
+
+        if (!product_file.toFile().exists()) {
+
+            error(
+                "Product GSEA file was not found:\n"
+                + "${product_file}"
+            )
+        }
+
+        println "Selected product GSEA file:"
+        println "  ${product_file.name}"
+
+        println "===================================="
+
+        tuple(
+            comparison,
+            product_file
+        )
+    }
+)
+
+
+    // ========================================================
+    // PROCESS 14
+    // ========================================================
+
+    GSEA_SIGNATURES_ANALYSIS(
+    PREPARE_METADATA.out.meta_analysis,
+    SSGSEA.out.scores_all,
+    response_rankedgsea_product
+)
+   
 
     
 }
