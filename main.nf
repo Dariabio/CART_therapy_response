@@ -228,6 +228,7 @@ process RANKED_GSEA {
     script:
 
     """
+    echo "Ranked GSEA UPDATED VERSION2"
     mkdir -p de_results
     mkdir -p panel_dir
     mkdir -p ranked_gsea
@@ -269,6 +270,7 @@ process SSGSEA {
     script:
 
     """
+    echo "ssGSEA UPDATED VERSION2"
     mkdir -p panel_dir
     mkdir -p ssgsea
     cp ${panel_files} panel_dir/
@@ -342,7 +344,7 @@ process PLOTS_GSEA {
     script:
 
     """
-    echo "PLOTS_GSEA UPDATED VERSION"
+    echo "PLOTS_GSEA UPDATED VERSION2"
     mkdir -p gsea_plots
     mkdir -p stat_results
     mkdir -p de_results
@@ -546,28 +548,40 @@ process GSEA_SIGNATURES_ANALYSIS {
 
     path metadata
     path scores_all 
-    tuple val(comparison), path(gsea_response)
+    tuple val(comparison), path(ssgsea_stat_result)
 
     output:
 
+
+    
+    path "ssgsea_score_diagnostics.tsv"
+    path"ssgsea_pathway_correlation_matrix.tsv"
+    path "highly_correlated_pathways.tsv"
+    path "patient_ssgsea_z_scores.tsv"
+    path "patient_ssgsea_regression_data.tsv"
+    
+
     path "logistic_univariate.tsv" 
     path "logistic_multivariable.tsv" 
-    path "patient_ssgsea_response_data.tsv" 
+    path "logistic_univariate_failed.tsv", optional: true
+    path "logistic_multivariable_failed.tsv", optional: true
+    path "multivariable_pathway_summary.tsv"
+  
     path "response_gsea_pathways_used.tsv"
     
 
     script:
 
     """
-    echo "GSEA_SIGNATURES_ANALYSIS update4"
+    echo "GSEA_SIGNATURES_ANALYSIS4"
     echo "Comparison: ${comparison}"
-    echo "GSEA response file: ${gsea_response}"
+    echo "GSEA response file: ${ssgsea_stat_result}"
 
     /opt/anaconda3/envs/crc_scanpy/bin/python \
         ${projectDir}/bin/14_signature_statistics.py \
         --metadata ${metadata} \
         --scores_all ${scores_all} \
-        --gsea_response ${gsea_response} \
+        --ssgsea_stat_result ${ssgsea_stat_result} \
         --timepoint product \
         --output_dir .
     """
@@ -832,27 +846,21 @@ workflow {
    
 
 
-    response_rankedgsea_product = (
-    RANKED_GSEA.out.ranked_gsea_results
-    .filter { comparison, ranked_gsea_dir ->
+    ssgsea_stat_product = (
+    STAT_SSGSEA.out.ssgsea_statistics
+    .filter { comparison, stat_results ->
         comparison == "response"
     }
-    .map { comparison, ranked_gsea_dir ->
+    .map { comparison, stat_results ->
 
         println "===================================="
-        println "SIGNATURE INPUT"
+        println "SIGNATURE STATISTICS INPUT"
         println "Comparison: ${comparison}"
-        println "Ranked GSEA directory:"
-        println "  ${ranked_gsea_dir}"
+        println "ssGSEA statistics directory:"
+        println "  ${stat_results}"
 
-        // ----------------------------------------------------
-        // Product GSEA file
-        // ranked_gsea/product/gseapy.gene_set.prerank.report.csv
-        // ----------------------------------------------------
-
-        def product_file = ranked_gsea_dir
-            .resolve("product")
-            .resolve("gseapy.gene_set.prerank.report.csv")
+        def product_file = stat_results
+            .resolve("ssGSEA_product.tsv")
 
         println "Expected product GSEA file:"
         println "  ${product_file}"
@@ -860,7 +868,7 @@ workflow {
         if (!product_file.toFile().exists()) {
 
             error(
-                "Product GSEA file was not found:\n"
+                "Product ssGSEA statistics file was not found:\n"
                 + "${product_file}"
             )
         }
@@ -885,7 +893,7 @@ workflow {
     GSEA_SIGNATURES_ANALYSIS(
     PREPARE_METADATA.out.meta_analysis,
     SSGSEA.out.scores_all,
-    response_rankedgsea_product
+    ssgsea_stat_product
 )
    
 

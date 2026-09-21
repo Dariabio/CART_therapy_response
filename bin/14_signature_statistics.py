@@ -36,8 +36,9 @@ parser.add_argument(
     help="ssGSEA scores matrix: samples x pathways"
 )
 
+
 parser.add_argument(
-    "--gsea_response",
+    "--ssgsea_stat_result",
     required=True,
     help=(
         "Ranked GSEA response results "
@@ -102,7 +103,7 @@ print(
 print("\nLoading GSEA response results...")
 
 gsea_response = pd.read_csv(
-    args.gsea_response
+    args.ssgsea_stat_result, sep='\t'
 )
 
 print(
@@ -140,8 +141,8 @@ if missing_meta_columns:
 
 
 required_gsea_columns = [
-    "Term",
-    "FDR q-val"
+    "subpopulation",
+    "FDR"
 ]
 
 
@@ -386,14 +387,14 @@ for col in clinical_binary:
 
 response_gsea = (
     gsea_response[
-        gsea_response["FDR q-val"] < 0.05
+        gsea_response["FDR"] < 0.15
     ]
     .copy()
 )
 
 
 response_terms = (
-    response_gsea["Term"]
+    response_gsea["subpopulation"]
     .dropna()
     .astype(str)
     .unique()
@@ -411,7 +412,7 @@ if len(response_terms) == 0:
 
     raise ValueError(
         "No GSEA response pathways with "
-        "FDR q-val < 0.05 were found."
+        "FDR < 0.1 were found."
     )
 
 
@@ -1219,9 +1220,9 @@ print(
 
 
 clinical_covariates = [
-    "aggressiveness_binary",
-    "bone_marrow_binary",
-    "lesion_binary"
+    "aggressiveness_bin",
+    "bone_marrow_bin",
+    "lesion_bin"
 ]
 
 
@@ -1297,13 +1298,13 @@ logistic_multivariable = pd.concat(
 
 predictor_labels = {
 
-    "aggressiveness_binary":
+    "aggressiveness_bin":
         "Aggressive vs indolent",
 
-    "bone_marrow_binary":
+    "bone_marrow_bin":
         "Bone marrow positive vs negative",
 
-    "lesion_binary":
+    "lesion_bin":
         "Widespread vs localized"
 }
 

@@ -62,7 +62,7 @@ for col in gp1.columns:
         f"P1_{col}"
     ] = genes
 
-
+'''
 # Panel 2
 
 gp2 = pd.read_csv(
@@ -73,9 +73,9 @@ gp2 = pd.read_csv(
     )
 
 gp2["subpop"] = (
-    gp2["Annotation"].astype(str)
+    gp2["Stage"].astype(str)
     + "_"
-    + gp2["Gene_Category"].astype(str)
+    + gp2["Annotation"].astype(str)
 )
 
 for name, group in gp2.groupby(
@@ -93,6 +93,39 @@ for name, group in gp2.groupby(
     panels[
         f"P2_{name}"
     ] = genes
+'''
+
+
+# Panel 5
+gp2 = pd.read_csv(
+    os.path.join(
+    args.panel_dir,
+    "gene_panel_5.csv"
+)
+    )
+
+for col in gp2.columns:
+
+    genes = (
+        gp2[col]
+        .dropna()
+        .astype(str)
+        .str.strip()
+        .tolist()
+    )
+
+    genes = [
+        g for g in genes
+        if g != "nan"
+    ]
+
+    panels[
+        f"P2_{col}"
+    ] = genes
+
+# Panel_2 preprossesing
+
+
 
 
 # Panel 3
@@ -142,34 +175,6 @@ for col in gp4.columns:
         f"P4_{col}"
     ] = genes
 
-# Panel 5
-gp5 = pd.read_csv(
-    os.path.join(
-    args.panel_dir,
-    "gene_panel_5.csv"
-)
-    )
-
-for col in gp5.columns:
-
-    genes = (
-        gp5[col]
-        .dropna()
-        .astype(str)
-        .str.strip()
-        .tolist()
-    )
-
-    genes = [
-        g for g in genes
-        if g != "nan"
-    ]
-
-    panels[
-        f"P5_{col}"
-    ] = genes
-
-
 
 # 3. Run ssGSEA
 ss = gp.ssgsea(
@@ -195,4 +200,3 @@ scores_all = scores_raw.pivot_table(
 scores_all.to_csv(os.path.join(args.output_dir, "scores_all.csv"))
 
 print("ssGSEA completed")
-

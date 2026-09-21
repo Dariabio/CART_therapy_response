@@ -143,6 +143,10 @@ for short_name in [
 
         # Prepare results for visualization
 
+         # ========================================================
+        # Prepare results for visualization
+        # ========================================================
+
         required_columns = [
             "Term",
             "NES",
@@ -150,15 +154,15 @@ for short_name in [
         ]
 
         missing_columns = [
-            col for col in required_columns
+            col
+            for col in required_columns
             if col not in all_results.columns
         ]
 
         if missing_columns:
 
             print(
-                f"  -> Missing columns: "
-                f"{missing_columns}"
+                f"  -> Missing columns: {missing_columns}"
             )
 
             print(
@@ -171,7 +175,8 @@ for short_name in [
 
             continue
 
-        df = all_results[
+
+        gsea_df = all_results[
             [
                 "Term",
                 "NES",
@@ -179,206 +184,218 @@ for short_name in [
             ]
         ].copy()
 
-        # Приводим числовые колонки к numeric
 
-        df["NES"] = pd.to_numeric(
-            df["NES"],
+        gsea_df["NES"] = pd.to_numeric(
+            gsea_df["NES"],
             errors="coerce"
         )
 
-        df["FDR q-val"] = pd.to_numeric(
-            df["FDR q-val"],
+        gsea_df["FDR q-val"] = pd.to_numeric(
+            gsea_df["FDR q-val"],
             errors="coerce"
         )
 
-        df = df.dropna(
-                subset=[
-                    "NES",
-                    "FDR q-val"
-                ]
+
+        gsea_df = gsea_df.dropna(
+            subset=[
+                "NES",
+                "FDR q-val"
+            ]
+        )
+
+
+        # ========================================================
+        # POSITIVE NES
+        # ========================================================
+
+        df_positive = (
+            gsea_df[gsea_df["NES"] > 0]
+            .sort_values("FDR q-val")
+            .head(10)
+            .copy()
+        )
+
+
+        if not df_positive.empty:
+
+            df_positive["minus_log10_FDR"] = (
+                -np.log10(
+                    df_positive["FDR q-val"] + 1e-300
+                )
             )
 
 
-# --------------------------------------------------------
-# Select positive and negative pathways
-# --------------------------------------------------------
-
-df["NES"] = pd.to_numeric(
-    df["NES"],
-    errors="coerce"
-)
-
-df["FDR q-val"] = pd.to_numeric(
-    df["FDR q-val"],
-    errors="coerce"
-)
-
-df = df.dropna(
-    subset=["NES", "FDR q-val"]
-)
+            plt.figure(
+                figsize=(10, 7)
+            )
 
 
-# ========================================================
-# POSITIVE NES
-# ========================================================
+            sns.scatterplot(
+                data=df_positive,
+                x="NES",
+                y="Term",
+                size="minus_log10_FDR",
+                hue="NES",
+                palette="RdBu_r",
+                sizes=(40, 350),
+                alpha=0.85,
+                edgecolor="white",
+                linewidth=0.7
+            )
 
-df_positive = (
-    df[df["NES"] > 0]
-    .sort_values("FDR q-val")
-    .head(10)
-    .copy()
-)
+
+            plt.axvline(
+                0,
+                color="black",
+                linestyle="--",
+                linewidth=0.8
+            )
 
 
-if not df_positive.empty:
+            plt.title(
+                f"Ranked GSEA — positive NES — {short_name}"
+            )
 
-    df_positive["minus_log10_FDR"] = (
-        -np.log10(
-            df_positive["FDR q-val"] + 1e-300
+            plt.xlabel(
+                "Normalized Enrichment Score"
+            )
+
+            plt.ylabel("")
+
+
+            plt.legend(
+                bbox_to_anchor=(1.02, 1),
+                loc="upper left",
+                frameon=False
+            )
+
+
+            plt.tight_layout()
+
+
+            output_file_positive = os.path.join(
+                outdir,
+                f"GSEA_dotplot_{short_name}_positive.png"
+            )
+
+
+            plt.savefig(
+                output_file_positive,
+                dpi=300,
+                bbox_inches="tight"
+            )
+
+            plt.close()
+
+
+            print(
+                "Positive GSEA dotplot saved:",
+                output_file_positive
+            )
+
+
+        else:
+
+            print(
+                f"No positive NES pathways for {short_name}"
+            )
+
+
+        # ========================================================
+        # NEGATIVE NES
+        # ========================================================
+
+        df_negative = (
+            gsea_df[gsea_df["NES"] < 0]
+            .sort_values("FDR q-val")
+            .head(10)
+            .copy()
         )
-    )
-
-    plt.figure(
-        figsize=(10, 7)
-    )
-
-    sns.scatterplot(
-        data=df_positive,
-        x="NES",
-        y="Term",
-        size="minus_log10_FDR",
-        hue="NES",
-        palette="RdBu_r",
-        sizes=(40, 350),
-        alpha=0.85,
-        edgecolor="white",
-        linewidth=0.7
-    )
-
-    plt.axvline(
-        0,
-        color="black",
-        linestyle="--",
-        linewidth=0.8
-    )
-
-    plt.title(
-        f"Ranked GSEA — positive NES — {short_name}"
-    )
-
-    plt.xlabel(
-        "Normalized Enrichment Score"
-    )
-
-    plt.ylabel("")
-
-    plt.legend(
-        bbox_to_anchor=(1.02, 1),
-        loc="upper left",
-        frameon=False
-    )
-
-    plt.tight_layout()
-
-    output_file_positive = os.path.join(
-        outdir,
-        f"GSEA_dotplot_{short_name}_positive.png"
-    )
-
-    plt.savefig(
-        output_file_positive,
-        dpi=300,
-        bbox_inches="tight"
-    )
-
-    plt.close()
-
-    print(
-        "Positive GSEA dotplot saved:",
-        output_file_positive
-    )
 
 
-# ========================================================
-# NEGATIVE NES
-# ========================================================
+        if not df_negative.empty:
 
-df_negative = (
-    df[df["NES"] < 0]
-    .sort_values("FDR q-val")
-    .head(10)
-    .copy()
-)
+            df_negative["minus_log10_FDR"] = (
+                -np.log10(
+                    df_negative["FDR q-val"] + 1e-300
+                )
+            )
 
 
-if not df_negative.empty:
+            plt.figure(
+                figsize=(10, 7)
+            )
 
-    df_negative["minus_log10_FDR"] = (
-        -np.log10(
-            df_negative["FDR q-val"] + 1e-300
-        )
-    )
 
-    plt.figure(
-        figsize=(10, 7)
-    )
+            sns.scatterplot(
+                data=df_negative,
+                x="NES",
+                y="Term",
+                size="minus_log10_FDR",
+                hue="NES",
+                palette="RdBu_r",
+                sizes=(40, 350),
+                alpha=0.85,
+                edgecolor="white",
+                linewidth=0.7
+            )
 
-    sns.scatterplot(
-        data=df_negative,
-        x="NES",
-        y="Term",
-        size="minus_log10_FDR",
-        hue="NES",
-        palette="RdBu_r",
-        sizes=(40, 350),
-        alpha=0.85,
-        edgecolor="white",
-        linewidth=0.7
-    )
 
-    plt.axvline(
-        0,
-        color="black",
-        linestyle="--",
-        linewidth=0.8
-    )
+            plt.axvline(
+                0,
+                color="black",
+                linestyle="--",
+                linewidth=0.8
+            )
 
-    plt.title(
-        f"Ranked GSEA — negative NES — {short_name}"
-    )
 
-    plt.xlabel(
-        "Normalized Enrichment Score"
-    )
+            plt.title(
+                f"Ranked GSEA — negative NES — {short_name}"
+            )
 
-    plt.ylabel("")
+            plt.xlabel(
+                "Normalized Enrichment Score"
+            )
 
-    plt.legend(
-        bbox_to_anchor=(1.02, 1),
-        loc="upper left",
-        frameon=False
-    )
+            plt.ylabel("")
 
-    plt.tight_layout()
 
-    output_file_negative = os.path.join(
-        outdir,
-        f"GSEA_dotplot_{short_name}_negative.png"
-    )
+            plt.legend(
+                bbox_to_anchor=(1.02, 1),
+                loc="upper left",
+                frameon=False
+            )
 
-    plt.savefig(
-        output_file_negative,
-        dpi=300,
-        bbox_inches="tight"
-    )
 
-    plt.close()
+            plt.tight_layout()
 
-    print(
-        "Negative GSEA dotplot saved:",
-        output_file_negative
-    )
 
+            output_file_negative = os.path.join(
+                outdir,
+                f"GSEA_dotplot_{short_name}_negative.png"
+            )
+
+
+            plt.savefig(
+                output_file_negative,
+                dpi=300,
+                bbox_inches="tight"
+            )
+
+            plt.close()
+
+
+            print(
+                "Negative GSEA dotplot saved:",
+                output_file_negative
+            )
+
+
+        else:
+
+            print(
+                f"No negative NES pathways for {short_name}"
+            )
 
 
 
