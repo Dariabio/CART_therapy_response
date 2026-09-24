@@ -5,7 +5,6 @@ import pandas as pd
 import gseapy as gp
 import matplotlib.pyplot as plt
 import seaborn as sns
-from matplotlib.colors import TwoSlopeNorm, Normalize
 
 
 parser = argparse.ArgumentParser(description="ranked GSEA, GO/KEGG")
@@ -42,14 +41,22 @@ os.makedirs(
 
 
 # Run GSEA
-
-
 # per each timepoint
-for short_name in [
+
+
+timepoints = [
     "product",
     "d7",
     "d28"
-]:
+]
+
+
+# COLLECT GSEA RESULTS
+results = {}
+
+
+
+for short_name in timepoints:
 
     input_file = os.path.join(
         DE_DIR,
@@ -124,7 +131,6 @@ for short_name in [
 
         all_results = pr.res2d.copy()
 
-
         all_results.to_csv(
             os.path.join(
                 outdir,
@@ -140,263 +146,234 @@ for short_name in [
         os.path.join(outdir, f"significant_results_{db}_{short_name}.tsv"), 
         sep="\t", index=False)
 
+        df2 = all_results[["Term", "NES", "FDR q-val"]].copy()
 
-        # Prepare results for visualization
+        df2 = df2.dropna(subset=["NES"])
 
-         # ========================================================
-        # Prepare results for visualization
-        # ========================================================
+        results[short_name] = df2
 
-        required_columns = [
-            "Term",
-            "NES",
-            "FDR q-val"
-        ]
+# BUILD COMMON HEATMAP
 
-        missing_columns = [
-            col
-            for col in required_columns
-            if col not in all_results.columns
-        ]
+# NES matrix
+nes_list = []
 
-        if missing_columns:
-
-            print(
-                f"  -> Missing columns: {missing_columns}"
-            )
-
-            print(
-                "  -> Available columns:"
-            )
-
-            print(
-                all_results.columns.tolist()
-            )
-
-            continue
+fdr_list = []
 
 
-        gsea_df = all_results[
-            [
-                "Term",
-                "NES",
-                "FDR q-val"
-            ]
-        ].copy()
+for timepoint in timepoints:
+
+    if timepoint not in results:
+
+        continue
 
 
-        gsea_df["NES"] = pd.to_numeric(
-            gsea_df["NES"],
-            errors="coerce"
+    res = results[
+        timepoint
+    ].copy()
+
+
+    res = res.set_index(
+        "Term"
+    )
+
+
+    nes = pd.to_numeric(
+        res["NES"],
+        errors="coerce"
+    )
+
+    fdr = pd.to_numeric(
+        res["FDR q-val"],
+        errors="coerce"
+    )
+
+
+    nes_list.append(
+        nes.rename(
+            timepoint
         )
+    )
 
-        gsea_df["FDR q-val"] = pd.to_numeric(
-            gsea_df["FDR q-val"],
-            errors="coerce"
+    fdr_list.append(
+        fdr.rename(
+            timepoint
         )
+    )
 
+# Combine all pathways
 
-        gsea_df = gsea_df.dropna(
-            subset=[
-                "NES",
-                "FDR q-val"
-            ]
-        )
+nes_mat = pd.concat(
+    nes_list,
+    axis=1
+)
 
+fdr_mat = pd.concat(
+    fdr_list,
+    axis=1
+)
 
-        # ========================================================
-        # POSITIVE NES
-        # ========================================================
 
-        df_positive = (
-            gsea_df[gsea_df["NES"] > 0]
-            .sort_values("FDR q-val")
-            .head(10)
-            .copy()
-        )
+# Make sure columns are in desired order
+nes_mat = nes_mat.reindex(
+    columns=timepoints
+)
 
+fdr_mat = fdr_mat.reindex(
+    columns=timepoints
+)
 
-        if not df_positive.empty:
 
-            df_positive["minus_log10_FDR"] = (
-                -np.log10(
-                    df_positive["FDR q-val"] + 1e-300
-                )
-            )
+# Keep pathways significant in at least one timepoint
+significant_any = (
+    fdr_mat < 0.05
+).any(axis=1)
 
+nes_mat = nes_mat.loc[
+    significant_any
+]
 
-            plt.figure(
-                figsize=(10, 7)
-            )
+fdr_mat = fdr_mat.loc[
+    significant_any
+]
 
 
-            sns.scatterplot(
-                data=df_positive,
-                x="NES",
-                y="Term",
-                size="minus_log10_FDR",
-                hue="NES",
-                palette="RdBu_r",
-                sizes=(40, 350),
-                alpha=0.85,
-                edgecolor="white",
-                linewidth=0.7
-            )
+# ORDER PATHWAYS
 
+# Mean absolute NES across available timepoints.
+# This is ONLY for visualization ordering.
 
-            plt.axvline(
-                0,
-                color="black",
-                linestyle="--",
-                linewidth=0.8
-            )
+nes_mat["mean_abs_NES"] = (
+    nes_mat
+    .abs()
+    .mean(
+        axis=1,
+        skipna=True
+    )
+)
 
+nes_mat = nes_mat.sort_values(
+    "mean_abs_NES",
+    ascending=False
+)
 
-            plt.title(
-                f"Ranked GSEA — positive NES — {short_name}"
-            )
+nes_mat = nes_mat.drop(
+    columns="mean_abs_NES"
+)
 
-            plt.xlabel(
-                "Normalized Enrichment Score"
-            )
 
-            plt.ylabel("")
+fdr_mat = fdr_mat.reindex(
+    nes_mat.index
+)
 
 
-            plt.legend(
-                bbox_to_anchor=(1.02, 1),
-                loc="upper left",
-                frameon=False
-            )
+# SIGNIFICANCE MARKERS
 
 
-            plt.tight_layout()
+def fdr_to_stars(x):
 
+    if pd.isna(x):
+        return ""
 
-            output_file_positive = os.path.join(
-                outdir,
-                f"GSEA_dotplot_{short_name}_positive.png"
-            )
+    if x < 0.0001:
+        return "***"
 
+    elif x < 0.01:
+        return "**"
 
-            plt.savefig(
-                output_file_positive,
-                dpi=300,
-                bbox_inches="tight"
-            )
+    elif x < 0.05:
+        return "*"
 
-            plt.close()
+    return ""
 
 
-            print(
-                "Positive GSEA dotplot saved:",
-                output_file_positive
-            )
+significance = fdr_mat.apply(
+    lambda col: col.map(fdr_to_stars)
+)
 
+fig_height = min(
+    max(8, len(nes_mat) * 0.15),
+    60
+)
 
-        else:
+g = sns.clustermap(
+    nes_mat,
 
-            print(
-                f"No positive NES pathways for {short_name}"
-            )
+    cmap="RdBu_r",
+    center=0,
 
+    figsize=(10, fig_height),
 
-        # ========================================================
-        # NEGATIVE NES
-        # ========================================================
+    col_cluster=False,
+    row_cluster=False,
 
-        df_negative = (
-            gsea_df[gsea_df["NES"] < 0]
-            .sort_values("FDR q-val")
-            .head(10)
-            .copy()
-        )
+    linewidths=0.5,
+    linecolor="white",
+    cbar_pos=(0.02, 0.5, 0.03, 0.15),
 
+    # ONLY stars inside cells
+    annot=significance,
+    fmt="",
 
-        if not df_negative.empty:
+    annot_kws={
+        "fontsize": 9,
+        "fontweight": "bold"
+    }
+)
 
-            df_negative["minus_log10_FDR"] = (
-                -np.log10(
-                    df_negative["FDR q-val"] + 1e-300
-                )
-            )
+# Labels
 
 
-            plt.figure(
-                figsize=(10, 7)
-            )
+g.ax_heatmap.set_xlabel(
+        "Timepoint"
+    )
 
+g.ax_heatmap.set_ylabel(
+        "Gene signature"
+    )
 
-            sns.scatterplot(
-                data=df_negative,
-                x="NES",
-                y="Term",
-                size="minus_log10_FDR",
-                hue="NES",
-                palette="RdBu_r",
-                sizes=(40, 350),
-                alpha=0.85,
-                edgecolor="white",
-                linewidth=0.7
-            )
+# Only labels for columns that actually exist
 
+label_map = {
+        "product": "Product",
+        "d7": "Day 7",
+        "d28": "Day 28"
+    }
 
-            plt.axvline(
-                0,
-                color="black",
-                linestyle="--",
-                linewidth=0.8
-            )
+existing_columns = (
+        nes_mat.columns
+    )
 
+g.ax_heatmap.set_xticklabels(
+        [
+            label_map[x]
+            for x in existing_columns
+        ],
+        rotation=0
+    )
 
-            plt.title(
-                f"Ranked GSEA — negative NES — {short_name}"
-            )
+g.ax_heatmap.set_title(
+        f"Ranked GSEA — "
+        f"{comparison} — "
+        f"NES across timepoints - GO Biological pathways",
+        pad=20
+    )
 
-            plt.xlabel(
-                "Normalized Enrichment Score"
-            )
 
-            plt.ylabel("")
 
+output_file = os.path.join(
+    GSEA_DIR,
+    "Ranked_GO_GSEA_NES_heatmap.png"
+)
 
-            plt.legend(
-                bbox_to_anchor=(1.02, 1),
-                loc="upper left",
-                frameon=False
-            )
 
+g.savefig(
+    output_file,
+    dpi=300,
+    bbox_inches="tight"
+)
 
-            plt.tight_layout()
 
-
-            output_file_negative = os.path.join(
-                outdir,
-                f"GSEA_dotplot_{short_name}_negative.png"
-            )
-
-
-            plt.savefig(
-                output_file_negative,
-                dpi=300,
-                bbox_inches="tight"
-            )
-
-            plt.close()
-
-
-            print(
-                "Negative GSEA dotplot saved:",
-                output_file_negative
-            )
-
-
-        else:
-
-            print(
-                f"No negative NES pathways for {short_name}"
-            )
-
-
-
+plt.close(
+    g.fig
+)
 

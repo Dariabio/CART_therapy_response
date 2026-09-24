@@ -72,12 +72,22 @@ timepoint_order = [
     "d28 after"
 ]
 
-
 category_palette = {
     "product": "#4C72B0",
     "d7 after": "#DD8452",
     "d28 after": "#55A868"
 }
+
+aggressiv_palette = {'aggressive': '#B6A1C7', 
+                     'indolent': '#666262'}
+
+bone_marrow_palette = {'bone_marrow_positive': '#FFC0CB', 
+               'bone_marrow_negative': "#B6D69A"}
+
+lesion_palette = {'widespread': '#FF692A', 
+                  'localized': "#5F3737"}
+
+
 
 # MATCH VST AND METADATA SAMPLES
 
@@ -94,49 +104,149 @@ assert list(meta.index) == list(vst_df.index)
 
 # 1. Unsupervised clustering
 
-# filter top genes with high variance
-gene_variances = vst_df.var(axis=0)
-top_100_genes = gene_variances.sort_values(ascending=False).head(50).index
-vst_filtered = vst_df[top_100_genes]
+def unsup_cluster(n=50, labelsize=10):
+    # filter top genes with high variance
+    gene_variances = vst_df.var(axis=0)
+    top_100_genes = gene_variances.sort_values(ascending=False).head(n).index
+    vst_filtered = vst_df[top_100_genes]
 
-# columns samples rows genes
-heatmap_data = vst_filtered.T
+    # columns samples rows genes
+    heatmap_data = vst_filtered.T
 
 # Mapping colours and samples
-col_colors = meta['timepoint'].map(category_palette)
+#col_colors = meta['timepoint'].map(category_palette)
 
+    col_colors = pd.DataFrame({
+        'Timepoint': meta['timepoint'].map(category_palette),
+        'Aggressiveness': meta['aggressiveness'].map(aggressiv_palette),
+        'Bone marrow': meta['bone_marrow'].map(bone_marrow_palette),
+        'Lesion': meta['lesion'].map(lesion_palette)
+    })
+    col_colors = col_colors.loc[heatmap_data.columns]
 # CLUSTERMAP
 
 # z_score=1 scaling by genes 
 
-g = sns.clustermap(
+    g = sns.clustermap(
     heatmap_data, 
     metric="correlation", 
     method="average", 
     cmap="vlag",      
     z_score=1,        
     col_colors=col_colors, 
-    figsize=(12, 10),
+    figsize=(14, 12),
     yticklabels=True,
-    xticklabels=False
+    xticklabels=False,
+    linewidths=0,
+    dendrogram_ratio=(0.12, 0.08),
+    colors_ratio=0.025,
+    cbar_pos=(0.03, 0.82, 0.02, 0.12)
 )
 
-# legends
-legend_elements = [Patch(facecolor=color, label=label) for label, color in category_palette.items()]
 
-plt.legend(
-        handles=legend_elements, 
-        title="Timepoints", 
-        bbox_to_anchor=(1.2, 1), 
-        loc='upper left'
-    )
+    def make_legend_handles(palette, title):
+        handles = [
+        Patch(
+            facecolor=color,
+            edgecolor='none',
+            label=str(label)
+        )
+        for label, color in palette.items()
+    ]
 
-g.fig.suptitle('Unsupervised clustering: Top 50 variable genes', y=1.02, fontsize=14)
+        return handles
 
-# 6. Saving
-heatmap_save_path = os.path.join(args.figures, "unsupervised_clustering_100_genes.png")
-plt.savefig(heatmap_save_path, bbox_inches='tight', dpi=300)
-plt.close()
+
+# Timepoint
+    timepoint_handles = make_legend_handles(
+    category_palette,
+    "Timepoint"
+)
+
+# Aggressiveness
+    aggressiveness_handles = make_legend_handles(
+    aggressiv_palette,
+    "Aggressiveness"
+)
+
+# Bone marrow
+    bone_marrow_handles = make_legend_handles(
+    bone_marrow_palette,
+    "Bone marrow"
+)
+
+# Lesion
+    lesion_handles = make_legend_handles(
+    lesion_palette,
+    "Lesion"
+)
+
+    legend_kwargs = dict(
+    frameon=False,
+    fontsize=11,
+    title_fontsize=12,
+    loc="upper left"
+)
+
+
+    g.fig.legend(
+    handles=timepoint_handles,
+    title="Timepoint",
+    bbox_to_anchor=(1.1, 1.0),
+    bbox_transform=g.ax_heatmap.transAxes, # Используем оси heatmap!
+    **legend_kwargs
+)
+
+    g.fig.legend(
+    handles=aggressiveness_handles,
+    title="Aggressiveness",
+    bbox_to_anchor=(1.1, 0.8), # Смещаем ниже
+    bbox_transform=g.ax_heatmap.transAxes,
+    **legend_kwargs
+)
+
+    g.fig.legend(
+    handles=bone_marrow_handles,
+    title="Bone marrow",
+    bbox_to_anchor=(1.1, 0.6), # Смещаем ниже
+    bbox_transform=g.ax_heatmap.transAxes,
+    **legend_kwargs
+)
+
+    g.fig.legend(
+    handles=lesion_handles,
+    title="Lesion",
+    bbox_to_anchor=(1.1, 0.4), # Смещаем ниже
+    bbox_transform=g.ax_heatmap.transAxes,
+    **legend_kwargs
+)
+
+    g.tick_params(axis='y', labelsize=labelsize) 
+
+    g.fig.suptitle(
+    f"Unsupervised clustering: Top {n} variable genes",
+    fontsize=16,
+    fontweight="bold",
+    x=0.48,
+    y=0.98
+)
+
+    heatmap_save_path = os.path.join(
+    args.figures,
+    f"unsupervised_clustering_{n}_genes.png"
+)
+
+    g.savefig(
+    heatmap_save_path,
+    bbox_inches="tight",
+    dpi=300
+)
+
+    plt.close(g.fig)
+
+
+unsup_cluster(n=50, labelsize=10)
+unsup_cluster(n=100, labelsize=8)
 
 # 2. DE analysis by timepoints (vs product) and clustering 
 
@@ -325,9 +435,8 @@ else:
     
     print(f"DEG heatmap successfully saved to {heatmap_save_path}")
 
-    # ============================================================
+
 # 4. TOP DEGs FOR EACH TIMEPOINT COMPARISON
-# ============================================================
 
 top_n = 20
 
@@ -495,16 +604,9 @@ for comp_id, info in comparisons.items():
         .map(category_palette)
     )
 
-    # --------------------------------------------------------
     # Plot
-    # --------------------------------------------------------
 
-    
-
-
-        # --------------------------------------------------------
     # Clean heatmap matrix before clustering
-    # --------------------------------------------------------
 
     # Convert everything to numeric
     heatmap_data = heatmap_data.apply(
@@ -579,9 +681,7 @@ for comp_id, info in comparisons.items():
         )
         continue
 
-    # --------------------------------------------------------
     # Plot
-    # --------------------------------------------------------
 
     g_top = sns.clustermap(
         heatmap_z,
@@ -643,9 +743,9 @@ for comp_id, info in comparisons.items():
         f"{heatmap_save_path}"
     )
 
-# ============================================================
+
 # 5. GSEA FOR TIMEPOINT COMPARISONS
-# ============================================================
+
 
 gsea_timepoints = [
     "d7_after_vs_product",
@@ -662,16 +762,8 @@ os.makedirs(
     exist_ok=True
 )
 
-print(
-    f"GSEA output directory: {gsea_root}"
-)
-
 
 for tp_name in gsea_timepoints:
-
-    print(
-        f"\nRunning GSEA for {tp_name}"
-    )
 
     # --------------------------------------------------------
     # Load DESeq2 results
@@ -929,10 +1021,7 @@ for tp_name in gsea_timepoints:
 
         continue
 
-
-    # ========================================================
     # POSITIVE NES
-    # ========================================================
 
     positive = (
         significant[
@@ -1028,10 +1117,7 @@ for tp_name in gsea_timepoints:
             f"{positive_file}"
         )
 
-
-    # ========================================================
     # NEGATIVE NES
-    # ========================================================
 
     negative = (
         significant[

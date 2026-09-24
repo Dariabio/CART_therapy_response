@@ -600,10 +600,6 @@ def load_ssgsea_results(
 # 5. ssGSEA BOXPLOTS
 # ============================================================
 
-# ============================================================
-# 5. ssGSEA BOXPLOTS
-# ============================================================
-
 def make_ssgsea_boxplots(
     p_cutoff=0.05
 ):
@@ -1365,13 +1361,6 @@ def ranked_gsea_heatmap(
         g.fig
     )
 
-    print(
-        f"\nSaved ranked GSEA heatmap:"
-    )
-
-    print(
-        output_file
-    )
 
 ranked_gsea_heatmap(
     ranked_gsea_results

@@ -425,6 +425,7 @@ process GLOBAL_GSEA {
     script:
 
     """
+    echo "GLOBAL RANKED GSEA UPDATED VERSION8"
     mkdir -p de_results
     mkdir -p global_gsea
 
@@ -467,7 +468,7 @@ process TIMEPOINT_ANALYSIS {
     script:
 
     """
-
+    echo "Timepoint analysis UPDATED VERSION6"
     mkdir -p timepoint_gsea
     mkdir -p figures
 
@@ -820,8 +821,11 @@ workflow {
     // ========================================================
     // PROCESS 11
     // ========================================================
+    
 
     GLOBAL_GSEA(DE_ANALYSIS.out.de_results)
+    
+    
    
     // ========================================================
     // PROCESS 12
