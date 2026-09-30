@@ -1097,11 +1097,17 @@ def ranked_gsea_heatmap(
     nes_list = []
     fdr_list = []
 
+    '''
     for timepoint in [
         "product",
         "d7",
         "d28"
     ]:
+    '''
+
+    for timepoint in [
+            "product"
+        ]:
 
         if timepoint not in gsea_results:
             continue
@@ -1293,12 +1299,17 @@ def ranked_gsea_heatmap(
     )
 
     # Only labels for columns that actually exist
-
+    '''
     label_map = {
         "product": "Product",
         "d7": "Day 7",
         "d28": "Day 28"
     }
+    '''
+
+    label_map = {
+            "product": "Product"
+        }
 
     existing_columns = (
         nes_mat.columns

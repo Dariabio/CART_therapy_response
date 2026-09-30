@@ -8,6 +8,11 @@ from pydeseq2.dds import DeseqDataSet
 from pydeseq2.ds import DeseqStats
 import gseapy as gp
 from matplotlib.colors import TwoSlopeNorm, Normalize
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import AgglomerativeClustering
+from sklearn.metrics import silhouette_score
+
+
 
 
 import argparse
@@ -58,6 +63,7 @@ vst_df = pd.read_csv(
     index_col=0
 ).T
 
+
 meta = pd.read_csv(
     args.metadata,
     sep="\t",
@@ -73,19 +79,22 @@ timepoint_order = [
 ]
 
 category_palette = {
-    "product": "#4C72B0",
-    "d7 after": "#DD8452",
-    "d28 after": "#55A868"
+    "product": "#6ECFFF",
+    "d7 after": "#FFC400",
+    "d28 after": "#CB3CFF"
 }
 
-aggressiv_palette = {'aggressive': '#B6A1C7', 
-                     'indolent': '#666262'}
+aggressiv_palette = {'aggressive': "#7C20C7FF", 
+                     'indolent': "#8E9B88"}
 
-bone_marrow_palette = {'bone_marrow_positive': '#FFC0CB', 
-               'bone_marrow_negative': "#B6D69A"}
+bone_marrow_palette = {'bone_marrow_positive': "#FFC3E6", 
+               'bone_marrow_negative': "#FFF785"}
 
-lesion_palette = {'widespread': '#FF692A', 
-                  'localized': "#5F3737"}
+lesion_palette = {'widespread': "#B83E09", 
+                  'localized': "#8BE8EB"}
+
+response_palette = {'responder': "#00FF33", 
+                  'nonresponder': "#FF0303"}
 
 
 
@@ -120,7 +129,8 @@ def unsup_cluster(n=50, labelsize=10):
         'Timepoint': meta['timepoint'].map(category_palette),
         'Aggressiveness': meta['aggressiveness'].map(aggressiv_palette),
         'Bone marrow': meta['bone_marrow'].map(bone_marrow_palette),
-        'Lesion': meta['lesion'].map(lesion_palette)
+        'Lesion': meta['lesion'].map(lesion_palette),
+        'Response':meta['response'].map(response_palette)
     })
     col_colors = col_colors.loc[heatmap_data.columns]
 # CLUSTERMAP
@@ -180,6 +190,12 @@ def unsup_cluster(n=50, labelsize=10):
     lesion_palette,
     "Lesion"
 )
+# Response
+    response_handles = make_legend_handles(
+    response_palette,
+    "Response"
+)
+
 
     legend_kwargs = dict(
     frameon=False,
@@ -221,6 +237,14 @@ def unsup_cluster(n=50, labelsize=10):
     **legend_kwargs
 )
 
+    g.fig.legend(
+    handles=response_handles,
+    title="Response",
+    bbox_to_anchor=(1.1, 0.2), # Смещаем ниже
+    bbox_transform=g.ax_heatmap.transAxes,
+    **legend_kwargs
+    )
+
     g.tick_params(axis='y', labelsize=labelsize) 
 
     g.fig.suptitle(
@@ -248,7 +272,332 @@ def unsup_cluster(n=50, labelsize=10):
 unsup_cluster(n=50, labelsize=10)
 unsup_cluster(n=100, labelsize=8)
 
-# 2. DE analysis by timepoints (vs product) and clustering 
+# 2. Clustering specific genes
+
+# Definitive list of MHC and antigen presentation pathway genes
+mhc_i_genes = ["HLA-A", "HLA-B", "HLA-C", "B2M", "TAP1", "TAP2", "TAPBP", "CALR", "CNX", "PDIA3"]
+mhc_ii_genes = ["HLA-DRA", "HLA-DRB1", "HLA-DRB3", "HLA-DRB4", "HLA-DRB5", 
+                "HLA-DQA1", "HLA-DQB1", "HLA-DPA1", "HLA-DPB1", "CD74", "HLA-DMA", "HLA-DMB"]
+antigen_presentation_genes = ["CIITA", "RFX5", "RFXANK", "RFXAP", "ERAP1", "ERAP2", "PSMB8", "PSMB9", "NLEDC1"]
+
+# Full supervised target feature set
+target_genes = list(dict.fromkeys(
+    mhc_i_genes
+    + mhc_ii_genes
+    + antigen_presentation_genes
+))
+
+available_genes = [g for g in target_genes if g in vst_df.columns]
+
+X_supervised = vst_df[available_genes].copy()
+
+# StandardScaler сдвинет среднее в 0 и приведет дисперсию к 1.
+scaler = StandardScaler()
+
+X_scaled = scaler.fit_transform(
+    X_supervised
+)
+
+X_scaled = pd.DataFrame(
+    X_scaled,
+    index=X_supervised.index,
+    columns=X_supervised.columns
+)
+
+# 5. Кластеризация и валидация (Силуэтный анализ)
+
+best_n_clusters = 2
+best_score = -1
+best_labels = None
+
+for n in range(2, 6):
+
+    clusterer = AgglomerativeClustering(
+        n_clusters=n,
+        linkage="ward"
+    )
+
+    labels = clusterer.fit_predict(
+        X_scaled
+    )
+
+    score = silhouette_score(
+        X_scaled,
+        labels
+    )
+
+    print(
+        f"Clusters = {n} | "
+        f"Silhouette = {score:.3f}"
+    )
+
+    if score > best_score:
+        best_score = score
+        best_n_clusters = n
+        best_labels = labels
+
+for n in range(2, 6):
+    clusterer = AgglomerativeClustering(n_clusters=n, linkage='ward')
+    labels = clusterer.fit_predict(X_scaled)
+    score = silhouette_score(X_scaled, labels)
+    print(f"Количество кластеров: {n} | Силуэтный коэффициент: {score:.3f}")
+    if score > best_score:
+        best_score = score
+        best_n_clusters = n
+        best_labels = labels
+
+
+# Cluster labels
+# ------------------------------------------------------------
+
+cluster_labels = pd.Series(
+    best_labels,
+    index=X_supervised.index,
+    name="Cluster"
+)
+
+print("\nCluster sizes:")
+print(
+    cluster_labels.value_counts()
+    .sort_index()
+)
+
+# ------------------------------------------------------------
+# Order samples by cluster
+# ------------------------------------------------------------
+
+sample_order = (
+    cluster_labels
+    .sort_values()
+    .index
+)
+
+X_supervised_ordered = X_supervised.loc[
+    sample_order
+]
+ 
+# Cluster colors
+# ------------------------------------------------------------
+
+cluster_palette = sns.color_palette(
+    "Set2",
+    best_n_clusters
+)
+
+sample_colors = (
+    cluster_labels
+    .loc[sample_order]
+    .map(
+        lambda x: cluster_palette[x]
+    )
+)
+
+# Annotation dataframe
+col_colors2 = pd.DataFrame({
+    "Timepoint": meta.loc[sample_order, "timepoint"].map(category_palette),
+    "Aggressiveness": meta.loc[sample_order, "aggressiveness"].map(aggressiv_palette),
+    "Bone marrow": meta.loc[sample_order, "bone_marrow"].map(bone_marrow_palette),
+    "Lesion": meta.loc[sample_order, "lesion"].map(lesion_palette),
+    "Response": meta.loc[sample_order, "response"].map(response_palette),
+    "Cluster": sample_colors
+})
+
+
+heatmap_data = (
+    X_supervised_ordered
+    .T
+)
+
+# Make absolutely sure that annotation order
+# is identical to heatmap sample order
+col_colors2 = col_colors2.loc[heatmap_data.columns]
+
+g = sns.clustermap(
+    heatmap_data,
+
+    # expression colors
+    cmap="vlag",
+    center=0,
+
+    # z-score each gene across samples
+    z_score=0,
+
+    # IMPORTANT:
+    # samples are already ordered according
+    # to the clusters identified above
+    row_cluster=False,
+    col_cluster=False,
+
+    # cluster colors above samples
+    col_colors=col_colors2,
+
+    # visualization
+    figsize=(14, 10),
+    yticklabels=True,
+    xticklabels=False,
+
+    linewidths=0,
+
+    dendrogram_ratio=(0.12, 0.03),
+    colors_ratio=0.025,
+    cbar_pos=(0.03, 0.82, 0.02, 0.12)
+)
+
+available_mhc_i = [
+    gene for gene in mhc_i_genes
+    if gene in vst_df.columns
+]
+
+available_mhc_ii = [
+    gene for gene in mhc_ii_genes
+    if gene in vst_df.columns
+]
+
+available_antigen = [
+    gene for gene in antigen_presentation_genes
+    if gene in vst_df.columns
+]
+
+available_genes = (
+    available_mhc_i
+    + available_mhc_ii
+    + available_antigen
+)
+
+
+n_mhc_i = len(available_mhc_i)
+n_mhc_ii = len(available_mhc_ii)
+# Horizontal lines between:
+# MHC-I / MHC-II / antigen presentation
+
+g.ax_heatmap.axhline(
+    n_mhc_i,
+    color="black",
+    linewidth=1.5
+)
+
+g.ax_heatmap.axhline(
+    n_mhc_i + n_mhc_ii,
+    color="black",
+    linewidth=1.5
+)
+
+def make_legend_handles(palette, title):
+        handles = [
+        Patch(
+            facecolor=color,
+            edgecolor='none',
+            label=str(label)
+        )
+        for label, color in palette.items()
+    ]
+
+        return handles
+
+
+# Timepoint
+timepoint_handles = make_legend_handles(
+    category_palette,
+    "Timepoint"
+)
+
+# Aggressiveness
+aggressiveness_handles = make_legend_handles(
+    aggressiv_palette,
+    "Aggressiveness"
+)
+
+# Bone marrow
+bone_marrow_handles = make_legend_handles(
+    bone_marrow_palette,
+    "Bone marrow"
+)
+
+# Lesion
+lesion_handles = make_legend_handles(
+    lesion_palette,
+    "Lesion"
+)
+
+# Response
+response_handles = make_legend_handles(
+    response_palette,
+    "Response"
+)
+
+legend_kwargs = dict(
+    frameon=False,
+    fontsize=11,
+    title_fontsize=12,
+    loc="upper left"
+)
+
+g.fig.legend(
+    handles=timepoint_handles,
+    title="Timepoint",
+    bbox_to_anchor=(1.1, 1.0),
+    bbox_transform=g.ax_heatmap.transAxes, # Используем оси heatmap!
+    **legend_kwargs
+)
+
+g.fig.legend(
+    handles=aggressiveness_handles,
+    title="Aggressiveness",
+    bbox_to_anchor=(1.1, 0.8), # Смещаем ниже
+    bbox_transform=g.ax_heatmap.transAxes,
+    **legend_kwargs
+)
+
+g.fig.legend(
+    handles=bone_marrow_handles,
+    title="Bone marrow",
+    bbox_to_anchor=(1.1, 0.6), # Смещаем ниже
+    bbox_transform=g.ax_heatmap.transAxes,
+    **legend_kwargs
+)
+
+g.fig.legend(
+    handles=lesion_handles,
+    title="Lesion",
+    bbox_to_anchor=(1.1, 0.4), # Смещаем ниже
+    bbox_transform=g.ax_heatmap.transAxes,
+    **legend_kwargs
+)
+
+g.fig.legend(
+    handles=response_handles,
+    title="Response",
+    bbox_to_anchor=(1.1, 0.2), # Смещаем ниже
+    bbox_transform=g.ax_heatmap.transAxes,
+    **legend_kwargs
+    )
+
+g.tick_params(axis='y', labelsize=10) 
+
+g.fig.suptitle(
+    "Supervised clustering based on "
+    "MHC and antigen-presentation genes",
+    y=1.02,
+    fontsize=15,
+    fontweight="bold"
+)
+
+
+heatmap_save_path = os.path.join(
+    args.figures,
+    "supervised_MHC_antigen_presentation_clustering.png"
+)
+
+g.savefig(
+    heatmap_save_path,
+    bbox_inches="tight",
+    dpi=300
+)
+
+plt.close(g.fig)
+
+
+# 3. DE analysis by timepoints (vs product) and clustering 
 
 counts = pd.read_csv(
     args.counts,
@@ -263,6 +612,7 @@ common_samples = [
         for sample in meta.index
         if sample in counts.index
     ]
+
 
 
 meta_tp = meta.loc[
@@ -400,33 +750,85 @@ else:
     vst_deg_sorted = vst_deg[sorted_samples]
 
     # 4. Update colours
-    col_colors_sorted = meta_tp.loc[sorted_samples, 'timepoint'].map(category_palette)
+    # Annotation dataframe
+    col_colors_sorted = pd.DataFrame({
+    "Timepoint": meta_tp.loc[sorted_samples, "timepoint"].map(category_palette),
+    "Aggressiveness": meta_tp.loc[sorted_samples, "aggressiveness"].map(aggressiv_palette),
+    "Bone marrow": meta_tp.loc[sorted_samples, "bone_marrow"].map(bone_marrow_palette),
+    "Lesion": meta_tp.loc[sorted_samples, "lesion"].map(lesion_palette),
+    "Response": meta.loc[sorted_samples, "response"].map(response_palette),
+
+})
+    #col_colors_sorted = meta_tp.loc[sorted_samples, 'timepoint'].map(category_palette)
+
 
     # 5. Clustermap
     g_deg = sns.clustermap(
         vst_deg_sorted, 
         metric="correlation", 
         method="average", 
-        cmap="vlag",       
+        cmap="vlag",
+        center=0,   
         z_score=0,        
         col_colors=col_colors_sorted, 
         col_cluster=False, 
-        row_cluster=True,  
-        figsize=(12, 10),
+        row_cluster=True,
+        dendrogram_ratio=(0.08, 0.02),
+        figsize=(16, 40),
         yticklabels=False, 
-        xticklabels=True   
+        xticklabels=True,
+        cbar_pos=(0.01, 0.8, 0.01, 0.15),
+        colors_ratio=(0.05, 0.005) 
     )
+    g_deg.ax_cbar.yaxis.set_ticks_position("left")
 
+    legend_kwargs = dict(
+    frameon=False,
+    fontsize=15,
+    title_fontsize=20,
+    loc="upper left"
+)
     # Add legend
-    legend_elements = [Patch(facecolor=color, label=label) for label, color in category_palette.items()]
-    plt.legend(
-        handles=legend_elements, 
-        title="Timepoints", 
-        bbox_to_anchor=(1.2, 1), 
-        loc='upper left'
+    g_deg.fig.legend(
+    handles=timepoint_handles,
+    title="Timepoint",
+    bbox_to_anchor=(1.1, 0.95),
+    bbox_transform=g_deg.ax_heatmap.transAxes, # Используем оси heatmap!
+    **legend_kwargs
+)
+
+    g_deg.fig.legend(
+    handles=aggressiveness_handles,
+    title="Aggressiveness",
+    bbox_to_anchor=(1.1, 0.85), # Смещаем ниже
+    bbox_transform=g_deg.ax_heatmap.transAxes,
+    **legend_kwargs
+)
+
+    g_deg.fig.legend(
+    handles=bone_marrow_handles,
+    title="Bone marrow",
+    bbox_to_anchor=(1.1, 0.75), # Смещаем ниже
+    bbox_transform=g_deg.ax_heatmap.transAxes,
+    **legend_kwargs
+)
+
+    g_deg.fig.legend(
+    handles=lesion_handles,
+    title="Lesion",
+    bbox_to_anchor=(1.1, 0.65), # Смещаем ниже
+    bbox_transform=g_deg.ax_heatmap.transAxes,
+    **legend_kwargs
+)
+    g_deg.fig.legend(
+    handles=response_handles,
+    title="Response",
+    bbox_to_anchor=(1.1, 0.55), # Смещаем ниже
+    bbox_transform=g_deg.ax_heatmap.transAxes,
+    **legend_kwargs
     )
 
-    g_deg.fig.suptitle(f'DEG Expression Heatmap ({len(deg_genes)} genes)', y=1.02, fontsize=14)
+    g_deg.fig.suptitle(f'DEG Expression Heatmap ({len(deg_genes)} genes)', y=1.02, fontsize=25)
 
     # 6. Saving
     heatmap_save_path = os.path.join(args.figures, "deg_heatmap_chronological.png")
@@ -744,6 +1146,8 @@ for comp_id, info in comparisons.items():
     )
 
 
+
+'''
 # 5. GSEA FOR TIMEPOINT COMPARISONS
 
 
@@ -1212,3 +1616,4 @@ for tp_name in gsea_timepoints:
             f"Negative GSEA plot saved: "
             f"{negative_file}"
         )
+'''

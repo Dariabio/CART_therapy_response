@@ -290,35 +290,40 @@ significance = fdr_mat.apply(
     lambda col: col.map(fdr_to_stars)
 )
 
-fig_height = min(
-    max(8, len(nes_mat) * 0.15),
-    60
-)
 
 g = sns.clustermap(
     nes_mat,
-
     cmap="RdBu_r",
     center=0,
 
-    figsize=(10, fig_height),
+    figsize=(
+        10,
+        max(
+            8,
+            len(nes_mat) * 0.30
+        )
+    ),
 
     col_cluster=False,
     row_cluster=False,
 
     linewidths=0.5,
     linecolor="white",
-    cbar_pos=(0.02, 0.5, 0.03, 0.15),
 
-    # ONLY stars inside cells
     annot=significance,
     fmt="",
 
     annot_kws={
         "fontsize": 9,
         "fontweight": "bold"
-    }
+    },
+    # пока оставляем colorbar
+    cbar_pos=(0.03, 0.3, 0.01, 0.15)
 )
+
+
+
+g.ax_cbar.yaxis.set_ticks_position("left")
 
 # Labels
 
@@ -329,26 +334,6 @@ g.ax_heatmap.set_xlabel(
 
 g.ax_heatmap.set_ylabel(
         "Gene signature"
-    )
-
-# Only labels for columns that actually exist
-
-label_map = {
-        "product": "Product",
-        "d7": "Day 7",
-        "d28": "Day 28"
-    }
-
-existing_columns = (
-        nes_mat.columns
-    )
-
-g.ax_heatmap.set_xticklabels(
-        [
-            label_map[x]
-            for x in existing_columns
-        ],
-        rotation=0
     )
 
 g.ax_heatmap.set_title(
@@ -368,12 +353,10 @@ output_file = os.path.join(
 
 g.savefig(
     output_file,
-    dpi=300,
-    bbox_inches="tight"
+    dpi=300
 )
 
 
 plt.close(
     g.fig
 )
-

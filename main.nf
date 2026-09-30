@@ -9,6 +9,7 @@ params.input_dir = "${projectDir}/data/raw/sample_expression"
 params.annotation_dir = "${projectDir}/data/annotation"
 params.panel_dir = "${projectDir}/data/raw"
 params.results_dir = "${projectDir}/results"
+params.scRNAseq_dir = "${projectDir}/data/scRNAseq"
 
 
 // ============================================================
@@ -425,7 +426,7 @@ process GLOBAL_GSEA {
     script:
 
     """
-    echo "GLOBAL RANKED GSEA UPDATED VERSION8"
+    echo "GLOBAL RANKED GSEA UPDATED VERSION14"
     mkdir -p de_results
     mkdir -p global_gsea
 
@@ -468,7 +469,7 @@ process TIMEPOINT_ANALYSIS {
     script:
 
     """
-    echo "Timepoint analysis UPDATED VERSION6"
+    echo "Timepoint analysis UPDATED VERSION25"
     mkdir -p timepoint_gsea
     mkdir -p figures
 
@@ -505,20 +506,28 @@ process SIGNATURE_ANALYSIS {
     output:
     
     // Signature files
-    path "CAR_T_response_signature.tsv"
-    path "product_significant_DEGs.tsv"
+    path "CAR_T_response_signature.tsv", emit: cart_response_signature
+    path "product_significant_DEGs.tsv", emit: product_DEGs
         
     // Logistic regression files
     path "signature_logistic_regression_data.tsv"
     path "logistic_univariate.tsv"
     path "logistic_multivariable.tsv"
+
+    // Signature discovery
+    path "elastic_net_LOOCV_predictions.tsv"
+    path "elastic_net_LOOCV_metrics.tsv"
+    path "elastic_net_LOOCV_gene_stability.tsv"
+    path "elastic_net_bootstrap_gene_stability.tsv"
+    path "CAR_T_response_signature_ElasticNet.tsv"
+    path "CAR_T_response_ElasticNet_model_parameters.tsv"
     
     path "figures"
 
     script:
 
     """
-    echo "SIGNATURE_ANALYSIS UPDATED VERSION"
+    echo "SIGNATURE_ANALYSIS UPDATED VERSION2"
     mkdir -p figures
 
     /opt/anaconda3/envs/crc_scanpy/bin/python \
@@ -587,7 +596,6 @@ process GSEA_SIGNATURES_ANALYSIS {
         --output_dir .
     """
 }
-
 
 
 
@@ -662,8 +670,6 @@ workflow {
         "lesion"
     ]
     
-    
-
 
     // ========================================================
     // PROCESS 1
@@ -822,8 +828,16 @@ workflow {
     // PROCESS 11
     // ========================================================
     
+    '''
+    global_gsea_input = DE_ANALYSIS.out.de_results.filter { comparison, de_files ->
+    comparison == "aggressiveness"
+
+    GLOBAL_GSEA(global_gsea_input)
+
+    '''
 
     GLOBAL_GSEA(DE_ANALYSIS.out.de_results)
+  
     
     
    
@@ -899,7 +913,7 @@ workflow {
     SSGSEA.out.scores_all,
     ssgsea_stat_product
 )
-   
 
-    
+
 }
+    
