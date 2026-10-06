@@ -209,365 +209,6 @@ for short_name, tp in TIMEPOINTS.items():
 
     print()
 
-#2. PCA ssGSEA
-
-def pca_ssgsea(
-    scores_df,
-    meta_df,
-    timepoint,
-    outdir
-):
-
-    if scores_df.empty:
-        print(
-            f"Skipping PCA {timepoint}: "
-            f"no data"
-        )
-        return
-
-    # PCA
-
-    pca = PCA(
-        n_components=2
-    )
-
-    pcs = pca.fit_transform(
-        scores_df
-    )
-
-    pca_df = pd.DataFrame(
-        pcs,
-        columns=[
-            "PC1",
-            "PC2"
-        ],
-        index=scores_df.index
-    )
-
-    pca_df = pca_df.join(
-        meta_df
-    )
-
-    # Plot
-
-    plt.figure(
-        figsize=(8, 6)
-    )
-
-    sns.scatterplot(
-        data=pca_df,
-        x="PC1",
-        y="PC2",
-        hue=comparison_column,
-        style="timepoint",
-        s=120
-    )
-
-
-    # Patient labels
-
-
-    for sample_id, row in pca_df.iterrows():
-
-        plt.text(
-            row["PC1"],
-            row["PC2"],
-            str(row["patient_id"]),
-            fontsize=8,
-            alpha=0.8,
-            weight="semibold"
-        )
-
-
-    # Axis labels
-
-
-    plt.xlabel(
-        f"PC1 "
-        f"({100 * pca.explained_variance_ratio_[0]:.1f}%)"
-    )
-
-    plt.ylabel(
-        f"PC2 "
-        f"({100 * pca.explained_variance_ratio_[1]:.1f}%)"
-    )
-
-    plt.title(
-        f"PCA ssGSEA — "
-        f"{comparison} — "
-        f"{timepoint}"
-    )
-
-    plt.tight_layout()
-
-    # Save
-
-
-    output_file = os.path.join(
-        outdir,
-        f"PCA_ssGSEA_{timepoint}.png"
-    )
-
-    plt.savefig(
-        output_file,
-        dpi=300,
-        bbox_inches="tight"
-    )
-
-    plt.close()
-
-    print(
-        f"Saved: {output_file}"
-    )
-
-
-# RUN PCA
-
-for short_name in TIMEPOINTS:
-
-    pca_ssgsea(
-        scores_by_tp[short_name],
-        meta_by_tp[short_name],
-        short_name,
-        args.output_dir
-    )
-
-
-# 3. ssGSEA HEATMAPS
-# ONE HEATMAP FOR EACH PANEL
-
-
-def ssgsea_heatmaps(
-    scores_df,
-    meta_df,
-    timepoint,
-    outdir
-):
-
-    if scores_df.empty:
-        print(
-            f"Skipping heatmaps {timepoint}: "
-            f"no data"
-        )
-        return
-
-  
-    # Z-score signatures across samples
-
-
-    scores_z = scores_df.copy()
-
-    scores_z = scores_z.apply(
-        zscore,
-        axis=0
-    )
-
-    scores_z = scores_z.replace(
-        [np.inf, -np.inf],
-        np.nan
-    )
-
-   
-    # Sort samples by comparison group
-   
-
-    meta_hm = meta_df.copy()
-
-    sorted_index = (
-        meta_hm
-        .sort_values(
-            by=comparison_column
-        )
-        .index
-    )
-
-    scores_z = scores_z.loc[
-        sorted_index
-    ]
-
-    meta_hm = meta_hm.loc[
-        sorted_index
-    ]
-
- 
-    # Patient labels
-   
-
-    patient_labels = (
-        meta_hm[
-            "patient_id"
-        ]
-        .astype(str)
-    )
-
-    scores_z.index = patient_labels
-
-
-    # Identify panel
-
-
-    panel_info = pd.DataFrame(
-        index=scores_z.columns
-    )
-
-    panel_info["panel"] = (
-        panel_info.index
-        .astype(str)
-        .str.extract(
-            r"^(P[1-4])_",
-            expand=False
-        )
-    )
-
-    # Mean absolute score
-
-
-    panel_info["mean_abs_score"] = (
-        scores_df
-        .abs()
-        .mean(
-            axis=0,
-            skipna=True
-        )
-    )
-
-    # Row colors
-
-
-    row_colors = pd.DataFrame(
-        {
-            "Group":
-            meta_hm[
-                comparison_column
-            ]
-        },
-        index=scores_z.index
-    )
-
-    # One heatmap per panel
-    
-
-    for panel in [
-        "P1",
-        "P2",
-        "P3",
-        "P4"
-    ]:
-
-        panel_signatures = (
-            panel_info[
-                panel_info["panel"] == panel
-            ]
-            .sort_values(
-                "mean_abs_score",
-                ascending=False
-            )
-            .index
-        )
-
-        if len(panel_signatures) == 0:
-
-            print(
-                f"No signatures for {panel}"
-            )
-
-            continue
-
-        panel_scores = scores_z.loc[
-            :,
-            panel_signatures
-        ]
-
-        # ----------------------------------------------------
-        # Heatmap
-        # ----------------------------------------------------
-
-        g = sns.clustermap(
-            panel_scores,
-            cmap="RdBu_r",
-            center=0,
-
-            col_cluster=False,
-            row_cluster=False,
-
-            row_colors=row_colors,
-
-            figsize=(8, 10),
-
-            xticklabels=True,
-            yticklabels=True,
-
-            linewidths=0.3,
-            linecolor="white"
-        )
-
-        # ----------------------------------------------------
-        # Formatting
-        # ----------------------------------------------------
-
-        plt.setp(
-            g.ax_heatmap
-            .get_xticklabels(),
-            fontsize=8,
-            rotation=90
-        )
-
-        plt.setp(
-            g.ax_heatmap
-            .get_yticklabels(),
-            fontsize=10,
-            rotation=0
-        )
-
-        g.ax_heatmap.set_xlabel(
-            "Gene signature"
-        )
-
-        g.ax_heatmap.set_ylabel(
-            "Patient"
-        )
-
-        g.ax_heatmap.set_title(
-            f"{panel} — ssGSEA activity — "
-            f"{comparison} — "
-            f"{timepoint}",
-            pad=20
-        )
-
-        # Save
-
-
-        output_file = os.path.join(
-            outdir,
-            f"Heatmap_ssGSEA_{panel}_{timepoint}.png"
-        )
-
-        g.savefig(
-            output_file,
-            dpi=300,
-            bbox_inches="tight"
-        )
-
-        plt.close(
-            g.fig
-        )
-
-        print(
-            f"Saved: {output_file}"
-        )
-
-
-# RUN ssGSEA HEATMAPS
-
-
-for short_name in TIMEPOINTS:
-
-    ssgsea_heatmaps(
-        scores_by_tp[short_name],
-        meta_by_tp[short_name],
-        short_name,
-        args.output_dir
-    )
 
 # 4. LOAD ssGSEA STATISTICAL RESULTS
 
@@ -1171,74 +812,99 @@ def ranked_gsea_heatmap(
         axis=1
     )
 
-    # --------------------------------------------------------
-    # Panel information
-    # --------------------------------------------------------
 
-    panel_info = pd.DataFrame(
-        index=nes_mat.index
-    )
+    # --------------------------------------------------------
+# Signature order for heatmap
+# --------------------------------------------------------
 
-    panel_info["panel"] = (
-        panel_info.index
+    signature_order = [
+
+    # Naive / memory
+    "Naive_Like",
+    "T_EarlyMem",
+    "Central_Memory",
+    "T_NonExhausted",
+
+    # Effector-memory
+    "Effector_Memory",
+    "CD8_TEM_circulating",
+    "Tissue_resident_memory",
+
+    # Effector
+    "Effector",
+    "Cytotoxic",
+
+    # Activation / functional states
+    "BTM_T cell_activation",
+    "Th1",
+    "TfH",
+    "Treg",
+
+    # Exhaustion trajectory
+    "Pre_Exhausted",
+    "TPEX_up",
+    "TEX_int_up",
+    "TEX_term_up",
+    "Exhaustion_Wherry",
+    "Exhaustion_Long",
+    "Exhausted_T",
+]
+
+
+
+
+    # Remove P1-P4 prefix from signature names
+
+    def clean_signature_names(index):
+        return (
+        index
         .astype(str)
-        .str.extract(
-            r"^(P[1-4])_",
-            expand=False
+        .str.strip()
+        .str.replace(
+            r"^P[1-4][-_: ]",
+            "",
+            regex=True
         )
+        .str.strip()
     )
 
-    panel_order = {
-        "P1": 1,
-        "P2": 2,
-        "P3": 3,
-        "P4": 4
-    }
 
-    panel_info["panel_order"] = (
-        panel_info[
-            "panel"
-        ].map(
-            panel_order
-        )
-    )
+    nes_mat = nes_mat.copy()
+    fdr_mat = fdr_mat.copy()
 
-    # --------------------------------------------------------
-    # Rank signatures
-    # --------------------------------------------------------
+    nes_mat.index = clean_signature_names(
+    nes_mat.index
+)
 
-    panel_info["mean_abs_NES"] = (
-        nes_mat
-        .abs()
-        .mean(
-            axis=1,
-            skipna=True
-        )
-    )
+    fdr_mat.index = clean_signature_names(
+    fdr_mat.index
+)
 
-    panel_info = panel_info.sort_values(
-        [
-            "panel_order",
-            "mean_abs_NES"
-        ],
-        ascending=[
-            True,
-            False
-        ]
-    )
 
-    ordered_signatures = (
-        panel_info.index
-    )
+# --------------------------------------------------------
+# Keep only signatures that exist in GSEA results
+# and follow custom biological order
+# --------------------------------------------------------
+
+    available_signatures = [
+    term
+    for term in signature_order
+    if term in nes_mat.index
+]
+
+
+
+# --------------------------------------------------------
+# Reorder NES and FDR matrices
+# --------------------------------------------------------
 
     nes_mat = nes_mat.loc[
-        ordered_signatures
-    ]
+    available_signatures
+]
 
-    fdr_mat = fdr_mat.reindex(
-        ordered_signatures
-    )
-
+    fdr_mat = fdr_mat.loc[
+    available_signatures
+]
     # --------------------------------------------------------
     # Significance markers
     # --------------------------------------------------------
@@ -1298,14 +964,6 @@ def ranked_gsea_heatmap(
         "Gene signature"
     )
 
-    # Only labels for columns that actually exist
-    '''
-    label_map = {
-        "product": "Product",
-        "d7": "Day 7",
-        "d28": "Day 28"
-    }
-    '''
 
     label_map = {
             "product": "Product"
@@ -1330,28 +988,7 @@ def ranked_gsea_heatmap(
         pad=20
     )
 
-    # --------------------------------------------------------
-    # Panel boundaries
-    # --------------------------------------------------------
-
-    panel_sequence = (
-        panel_info[
-            "panel"
-        ].values
-    )
-
-    boundaries = np.where(
-        panel_sequence[1:]
-        != panel_sequence[:-1]
-    )[0] + 1
-
-    for boundary in boundaries:
-
-        g.ax_heatmap.axhline(
-            boundary,
-            color="black",
-            linewidth=1.5
-        )
+   
 
     # --------------------------------------------------------
     # Save
@@ -1376,169 +1013,4 @@ def ranked_gsea_heatmap(
 ranked_gsea_heatmap(
     ranked_gsea_results
 )
-
-# 8. RANKED GSEA DOTPLOT
-
-
-def gsea_dotplot(
-    gsea_df,
-    timepoint,
-    top_n=15
-):
-
-    df = gsea_df.copy()
-
-    # --------------------------------------------------------
-    # Numeric conversion
-    # --------------------------------------------------------
-
-    df["NES"] = pd.to_numeric(
-        df["NES"],
-        errors="coerce"
-    )
-
-    df["FDR q-val"] = pd.to_numeric(
-        df["FDR q-val"],
-        errors="coerce"
-    )
-
-    df = df.dropna(
-        subset=[
-            "NES",
-            "FDR q-val"
-        ]
-    )
-
-    # --------------------------------------------------------
-    # Select top pathways
-    # --------------------------------------------------------
-
-    df = (
-        df
-        .sort_values(
-            "FDR q-val"
-        )
-        .head(top_n)
-    )
-
-    if df.empty:
-        return
-
-    # --------------------------------------------------------
-    # Size = -log10 FDR
-    # --------------------------------------------------------
-
-    df["minus_log10_FDR"] = (
-        -np.log10(
-            df["FDR q-val"]
-            + 1e-300
-        )
-    )
-
-    # --------------------------------------------------------
-    # Plot
-    # --------------------------------------------------------
-
-    plt.figure(
-        figsize=(9, 6)
-    )
-
-    nes_min = df["NES"].min()
-    nes_max = df["NES"].max()
-
-    if (
-        nes_min < 0
-        and nes_max > 0
-    ):
-
-        norm_hue = TwoSlopeNorm(
-            vcenter=0,
-            vmin=nes_min,
-            vmax=nes_max
-        )
-
-    else:
-
-        norm_hue = Normalize(
-            vmin=nes_min,
-            vmax=nes_max
-        )
-
-    sns.scatterplot(
-        data=df,
-        x="NES",
-        y="Term",
-        size="minus_log10_FDR",
-        hue="NES",
-        palette="RdBu_r",
-        hue_norm=norm_hue,
-        sizes=(20, 500),
-        edgecolor="black"
-    )
-
-    plt.axvline(
-        0,
-        color="black",
-        linestyle="--"
-    )
-
-    plt.title(
-        f"Ranked GSEA pathways — "
-        f"{comparison} — "
-        f"{timepoint}"
-    )
-
-    plt.xlabel(
-        "Normalized Enrichment Score"
-    )
-
-    plt.ylabel("")
-
-    plt.legend(
-        bbox_to_anchor=(
-            1.05,
-            1
-        ),
-        loc="upper left"
-    )
-
-    plt.tight_layout()
-
-    output_file = os.path.join(
-        args.output_dir,
-        f"GSEA_dotplot_{timepoint}.png"
-    )
-
-
-    plt.savefig(
-        output_file,
-        dpi=300,
-        bbox_inches="tight"
-    )
-
-    plt.close()
-
-    print(
-        f"Saved: {output_file}"
-    )
-
-
-# RUN RANKED GSEA DOTPLOTS
-
-
-for timepoint in [
-    "product",
-    "d7",
-    "d28"
-]:
-
-    if timepoint not in ranked_gsea_results:
-        continue
-
-    gsea_dotplot(
-        ranked_gsea_results[
-            timepoint
-        ],
-        timepoint
-    )
 

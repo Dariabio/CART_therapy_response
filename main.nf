@@ -345,7 +345,7 @@ process PLOTS_GSEA {
     script:
 
     """
-    echo "PLOTS_GSEA UPDATED VERSION2"
+    echo "PLOTS_GSEA UPDATED VERSION3"
     mkdir -p gsea_plots
     mkdir -p stat_results
     mkdir -p de_results
@@ -515,12 +515,12 @@ process SIGNATURE_ANALYSIS {
     path "logistic_multivariable.tsv"
 
     // Signature discovery
-    path "elastic_net_LOOCV_predictions.tsv"
-    path "elastic_net_LOOCV_metrics.tsv"
-    path "elastic_net_LOOCV_gene_stability.tsv"
-    path "elastic_net_bootstrap_gene_stability.tsv"
-    path "CAR_T_response_signature_ElasticNet.tsv"
-    path "CAR_T_response_ElasticNet_model_parameters.tsv"
+    path "elastic_net_LOOCV_predictions.tsv", emit: elastic_net_LOOCV_predictions
+    path "elastic_net_LOOCV_metrics.tsv", emit: elastic_net_LOOCV_metrics
+    path "elastic_net_LOOCV_gene_stability.tsv", emit: elastic_net_LOOCV_gene_stability
+    path "elastic_net_bootstrap_gene_stability.tsv", emit: elastic_net_bootstrap_gene_stability
+    path "CAR_T_response_signature_ElasticNet.tsv", emit: cart_response_signature_ElasticNet
+    path "CAR_T_response_ElasticNet_model_parameters.tsv", emit: cart_response_ElasticNet_model_parameters
     
     path "figures"
 
@@ -596,6 +596,60 @@ process GSEA_SIGNATURES_ANALYSIS {
         --output_dir .
     """
 }
+
+// ============================================================
+// PROCESS 15 — Signatures 
+// ============================================================
+
+
+process SIGNATURE_DISCOVERY {
+
+    tag "define final signature and analysis of the defined signature"
+
+    publishDir(
+        "${params.results_dir}/15_signature_discovery",
+        mode: "copy"
+    )
+
+    input:
+
+    path metadata
+    path cart_response_signature
+    path elastic_net_LOOCV_gene_stability
+    path elastic_net_bootstrap_gene_stability
+    path expr_all_vst
+    
+
+
+    output:
+    path "signature_elastic_net.tsv"
+    path "signature_degs_elastic_net.tsv"
+    path "figures"
+
+    script:
+
+    """
+    echo "SIGNATURE_VALIDATION STARTED4"
+
+    mkdir -p figures
+
+    echo "metadata = ${metadata}"
+    echo "signature = ${cart_response_signature}"
+
+    /opt/anaconda3/envs/crc_scanpy/bin/python \
+        ${projectDir}/bin/15_signature_discovery.py \
+        --metadata ${metadata} \
+        --signature ${cart_response_signature} \
+        --gene_frequency_file ${elastic_net_LOOCV_gene_stability} \
+        --bootstrap_stability_file ${elastic_net_bootstrap_gene_stability} \
+        --expr_all_vst ${expr_all_vst} \
+        --output_dir . \
+        --figures_dir figures
+    """
+}
+
+
+
 
 
 
@@ -913,7 +967,17 @@ workflow {
     SSGSEA.out.scores_all,
     ssgsea_stat_product
 )
-
+    // ========================================================
+    // PROCESS 15
+    // ========================================================
+  
+    SIGNATURE_DISCOVERY(
+    PREPARE_METADATA.out.meta_analysis,
+    SIGNATURE_ANALYSIS.out.cart_response_signature,
+    SIGNATURE_ANALYSIS.out.elastic_net_LOOCV_gene_stability,
+    SIGNATURE_ANALYSIS.out.elastic_net_bootstrap_gene_stability,
+    PREPARE_VST_PCA.out.expr_all_vst
+)
 
 }
     

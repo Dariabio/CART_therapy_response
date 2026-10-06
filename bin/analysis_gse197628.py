@@ -7,6 +7,13 @@ import seaborn as sns
 
 from scipy.stats import mannwhitneyu
 
+from sklearn.metrics import (
+    roc_curve,
+    roc_auc_score
+)
+
+
+
 
 # ============================================================
 # PATHS
@@ -17,87 +24,46 @@ H5AD = (
     "data/scRNAseq/CART_fulldataset_clustered.h5ad"
 )
 
+
+'''
+OUTPUT_DIR = (
+    "/Users/darakuzmina/Desktop/CAR_T/"
+    "results/rnaseq_gse197628/degs_signature"
+)
+'''
+OUTPUT_DIR = (
+    "/Users/darakuzmina/Desktop/CAR_T/"
+    "results/rnaseq_gse197628/elastic_net_signature"
+)
+
+'''
 SIGNATURE_FILE = (
     "/Users/darakuzmina/Desktop/CAR_T/"
     "results/13_signature/"
     "CAR_T_response_signature.tsv"
 )
+'''
 
-OUTPUT_DIR = (
+
+SIGNATURE_FILE = (
     "/Users/darakuzmina/Desktop/CAR_T/"
-    "results/15_signature_validation"
+    "results/15_signature_validation/"
+    "signature_elastic_net.csv"
 )
+
+
 
 os.makedirs(
     OUTPUT_DIR,
     exist_ok=True
 )
 
-
-# ============================================================
 # PARAMETERS
-# ============================================================
-
-MIN_CELLS_PER_PATIENT = 20
-
-MIN_CELLS_THRESHOLDS = [
-    20,
-    50,
-    100,
-    200
-]
-
-N_PERMUTATIONS = 10000
-N_BOOTSTRAPS = 5000
 
 RANDOM_SEED = 42
 
 
-# ============================================================
-# LOAD SIGNATURE
-# ============================================================
-
-signature = pd.read_csv(
-    SIGNATURE_FILE,
-    sep="\t"
-)
-
-print()
-print("Signature columns:")
-print(signature.columns.tolist())
-
-available_genes = (
-    signature.loc[
-        signature["direction"] == "responder_UP",
-        "gene"
-    ]
-    .astype(str)
-    .str.strip()
-    .tolist()
-)
-
-# remove duplicates while preserving order
-
-available_genes = list(
-    dict.fromkeys(
-        available_genes
-    )
-)
-
-print()
-print(
-    f"Genes in bulk signature: "
-    f"{len(available_genes)}"
-)
-
-print(
-    available_genes
-)
-
-
-# ============================================================
 # LOAD H5AD
-# ============================================================
 
 print()
 print("Loading h5ad in backed mode...")
@@ -117,87 +83,7 @@ print(
     adata.raw.shape
 )
 
-
-# ============================================================
-# CHECK REQUIRED OBS COLUMNS
-# ============================================================
-
-required_obs_columns = [
-    "timepoint",
-    "barcode",
-    "cell_type",
-    "response"
-]
-
-missing_columns = [
-    col
-    for col in required_obs_columns
-    if col not in adata.obs.columns
-]
-
-if missing_columns:
-
-    raise ValueError(
-        "Missing required obs columns: "
-        + str(missing_columns)
-    )
-
-
-# ============================================================
-# CHECK SIGNATURE GENES IN RAW
-# ============================================================
-
-raw_genes = set(
-    adata.raw.var_names
-)
-
-missing_genes = [
-    gene
-    for gene in available_genes
-    if gene not in raw_genes
-]
-
-if missing_genes:
-
-    print()
-    print(
-        "WARNING: signature genes "
-        "missing from adata.raw:"
-    )
-
-    print(missing_genes)
-
-
-available_genes = [
-    gene
-    for gene in available_genes
-    if gene in raw_genes
-]
-
-print()
-print(
-    f"Signature genes available "
-    f"in adata.raw: {len(available_genes)}"
-)
-
-print(
-    available_genes
-)
-
-if len(available_genes) < 5:
-
-    raise ValueError(
-        "Too few signature genes available "
-        "in adata.raw."
-    )
-
-
-# ============================================================
-# SELECT CELLS
-# ============================================================
-
-print()
-print("Selecting Infusion T cells...")
+print(adata.obs.columns.tolist())
 
 
 timepoint_mask = (
@@ -205,1586 +91,531 @@ timepoint_mask = (
     == "Infusion"
 )
 
-T_cell_types = [
-    "Infusion T",
-    "CD4 T",
-    "CD8 T"
-]
-
 cell_type_mask = (
-    adata.obs["cell_type"]
-    .astype(str)
-    .isin(T_cell_types)
+    adata.obs["cell_type"].astype(str)
+    == "Infusion T"
 )
+
 
 mask = (
     timepoint_mask
     & cell_type_mask
+    & adata.obs["response"].isin(["R", "NR"])
 )
 
-obs = adata.obs.loc[
-    mask
-].copy()
+obs = adata.obs.loc[mask].copy()
 
+# LOAD SIGNATURE
 
-print(
-    f"Selected cells: {len(obs)}"
+signature = pd.read_csv(
+    SIGNATURE_FILE
 )
 
-print()
-print(
-    "Cell types:"
+'''
+available_genes = (
+    signature.loc[
+        signature["direction"] == "responder_UP",
+        "gene"
+    ]
+    .astype(str)
+    .str.strip()
+    .tolist()
+)
+'''
+
+
+
+available_genes = (
+    signature["gene"]
+    .astype(str)
+    .str.strip()
+    .tolist()
 )
 
-print(
-    obs["cell_type"]
-    .value_counts()
-)
 
-
-# ============================================================
-# GET RAW EXPRESSION FOR SIGNATURE GENES
-# ============================================================
-
-print()
-print(
-    "Extracting signature expression "
-    "from adata.raw..."
-)
-
-gene_indices = [
-    adata.raw.var_names.get_loc(
-        gene
+# remove duplicates while preserving order
+available_genes = list(
+    dict.fromkeys(
+        available_genes
     )
+)
+
+
+# MATCH SIGNATURE GENES TO scRNA-seq
+# Check
+raw_genes = set(
+    adata.raw.var_names
+)
+
+available_genes_sc = [
+    gene
     for gene in available_genes
+    if gene in raw_genes
 ]
 
-selected_cell_indices = np.where(
-    mask.values
-)[0]
+missing_genes = [
+    gene
+    for gene in available_genes
+    if gene not in raw_genes
+]
+
+print(
+    "Signature genes in scRNA-seq:",
+    len(available_genes_sc)
+)
+
+print(
+    "Missing signature genes:",
+    len(missing_genes)
+)
+
+if missing_genes:
+    print(
+        "Missing genes:",
+        missing_genes
+    )
+
+# get genes in scRNA-seq
+gene_indices = [
+    adata.raw.var_names.get_loc(gene)
+    for gene in available_genes_sc
+]
+
+# FAM49A -> CYRIA
+
+selected_cell_indices = np.where(mask.values)[0]
 
 X = adata.raw.X[
     selected_cell_indices,
     :
 ][:, gene_indices]
 
-print(
-    "Expression matrix shape:",
-    X.shape
+# ============================================================
+# AGGREGATE CELLS TO SAMPLE LEVEL
+# ============================================================
+
+patient_ids = (
+    obs["barcode"]
+    .astype(str)
+    .values
 )
 
+if hasattr(X, "toarray"):
+    X_dense = X.toarray()
+else:
+    X_dense = np.asarray(X)
 
-# ============================================================
-# PATIENT METADATA
-# ============================================================
+expression = pd.DataFrame(
+    X_dense,
+    columns=available_genes_sc,
+    index=patient_ids
+)
 
-obs_patient = (
+sample_expr = (
+    expression
+    .groupby(level=0)
+    .mean()
+)
+
+print(
+    "Sample-level expression:",
+    sample_expr.shape
+)
+
+#cell counts per patient for sensitivity test
+
+cell_counts = (
+    obs["barcode"]
+    .astype(str)
+    .value_counts()
+    .sort_index()
+)
+
+sample_metadata = (
     obs[
         [
             "barcode",
-            "response"
+            "response",
+            "product",
+            "generic"
         ]
     ]
-    .drop_duplicates(
-        "barcode"
-    )
-    .set_index(
-        "barcode"
-    )
+    .drop_duplicates("barcode")
+    .set_index("barcode")
+    .sort_index()
 )
 
-obs_patient["response"] = (
-    obs_patient["response"]
-    .astype(str)
-    .str.strip()
+sample_metadata["n_cells"] = (
+    cell_counts
+)
+
+# ============================================================
+# CALCULATE SAMPLE-LEVEL SIGNATURE SCORE
+# ============================================================
+
+expression = sample_expr[
+    available_genes_sc
+].astype(float)
+
+# Gene-wise Z-score across samples
+gene_means = expression.mean(axis=0)
+gene_stds = expression.std(axis=0, ddof=1)
+
+z_expression = (
+    expression - gene_means
+).div(
+    gene_stds.replace(0, np.nan),
+    axis=1
+)
+
+# Mean Z-score across signature genes
+signature_score = z_expression.mean(
+    axis=1,
+    skipna=True
 )
 
 print()
-print(
-    "Patient response counts:"
+print("Signature score:")
+print(signature_score)
+
+# Description statistics
+print()
+print("Score summary:")
+print(signature_score.describe())
+
+sample_results = sample_metadata.copy()
+
+sample_results["signature_score"] = (
+    signature_score
 )
-
-print(
-    obs_patient["response"]
-    .value_counts()
-)
-
-
-# ============================================================
-# BUILD PATIENT-LEVEL EXPRESSION
-# ============================================================
-
-def build_patient_expression(
-    X,
-    obs,
-    genes,
-    cell_type=None
-):
-
-    # --------------------------------------------------------
-    # Cell type filter
-    # --------------------------------------------------------
-
-    if cell_type is not None:
-
-        mask = (
-            obs["cell_type"].astype(str)
-            == cell_type
-        )
-
-        obs_use = obs.loc[
-            mask
-        ].copy()
-
-        X_use = X[mask.values]
-
-    else:
-
-        obs_use = obs.copy()
-
-        X_use = X
-
-    # --------------------------------------------------------
-    # Patient IDs
-    # --------------------------------------------------------
-
-    patient_ids = (
-        obs_use["barcode"]
-        .astype(str)
-        .values
-    )
-
-    # --------------------------------------------------------
-    # Convert expression to DataFrame
-    # --------------------------------------------------------
-
-    if hasattr(
-        X_use,
-        "toarray"
-    ):
-
-        X_dense = X_use.toarray()
-
-    else:
-
-        X_dense = np.asarray(
-            X_use
-        )
-
-    expression = pd.DataFrame(
-        X_dense,
-        columns=genes,
-        index=patient_ids
-    )
-
-    # --------------------------------------------------------
-    # Patient-level mean expression
-    #
-    # This is pseudobulk-like aggregation.
-    # It is NOT count-sum pseudobulk.
-    # --------------------------------------------------------
-
-    patient_expr = (
-        expression
-        .groupby(level=0)
-        .mean()
-    )
-
-    # --------------------------------------------------------
-    # Number of cells per patient
-    # --------------------------------------------------------
-
-    cell_counts = (
-        pd.Series(
-            patient_ids
-        )
-        .value_counts()
-        .sort_index()
-    )
-
-    return (
-        patient_expr,
-        cell_counts
-    )
-
-
-# ============================================================
-# BUILD TWO ANALYSES
-# ============================================================
 
 print()
-print(
-    "Building All T patient profiles..."
-)
-
-patient_expr_all_T, cell_counts_all_T = (
-    build_patient_expression(
-        X,
-        obs,
-        available_genes,
-        cell_type=None
-    )
-)
-
+print(sample_results)
 
 print()
+
+print("Signature score by product and response:")
+
+summary_product = (
+    sample_results
+    .groupby(
+        ["product", "response"],
+        observed=True
+    )["signature_score"]
+    .agg(
+        ["count", "mean", "median", "std"]
+    )
+)
+
+print(summary_product)
+
+print()
+
 print(
-    "Building Infusion T patient profiles..."
-)
-
-patient_expr_infusion_T, cell_counts_infusion_T = (
-    build_patient_expression(
-        X,
-        obs,
-        available_genes,
-        cell_type="Infusion T"
-    )
-)
-
-
-# ============================================================
-# PRINT PATIENT SUMMARY
-# ============================================================
-
-def print_patient_summary(
-    patient_expr,
-    cell_counts,
-    label
-):
-
-    print()
-    print(
-        "=" * 60
-    )
-
-    print(
-        label
-    )
-
-    print(
-        "=" * 60
-    )
-
-    summary = pd.DataFrame({
-
-        "n_cells": cell_counts,
-
-        "response": (
-            obs_patient
-            .loc[
-                cell_counts.index,
-                "response"
-            ]
-        )
-    })
-
-    print(
-        summary
-        .sort_values(
-            "n_cells"
-        )
-        .to_string()
-    )
-
-    print()
-
-    print(
-        "Number of patients:",
-        len(summary)
-    )
-
-    print(
-        "Responders:",
-        (summary["response"] == "R").sum()
-    )
-
-    print(
-        "Nonresponders:",
-        (summary["response"] == "NR").sum()
-    )
-
-    print(
-        "Patients >= "
-        f"{MIN_CELLS_PER_PATIENT} cells:",
-        (
-            summary["n_cells"]
-            >= MIN_CELLS_PER_PATIENT
-        ).sum()
-    )
-
-
-print_patient_summary(
-    patient_expr_all_T,
-    cell_counts_all_T,
-    "ALL T"
-)
-
-print_patient_summary(
-    patient_expr_infusion_T,
-    cell_counts_infusion_T,
-    "INFUSION T"
-)
-
-
-# ============================================================
-# FILTER PATIENTS
-# ============================================================
-
-def filter_patients_by_cell_count(
-    patient_expr,
-    cell_counts,
-    min_cells
-):
-
-    keep = (
-        cell_counts[
-            cell_counts >= min_cells
+    sample_results[
+        [
+            "product",
+            "response",
+            "n_cells",
+            "signature_score"
         ]
-        .index
-    )
-
-    filtered_expr = (
-        patient_expr
-        .loc[
-            patient_expr.index.isin(
-                keep
-            )
-        ]
-        .copy()
-    )
-
-    return filtered_expr
-
-
-patient_expr_all_T = (
-    filter_patients_by_cell_count(
-        patient_expr_all_T,
-        cell_counts_all_T,
-        MIN_CELLS_PER_PATIENT
-    )
-)
-
-patient_expr_infusion_T = (
-    filter_patients_by_cell_count(
-        patient_expr_infusion_T,
-        cell_counts_infusion_T,
-        MIN_CELLS_PER_PATIENT
-    )
-)
-
-
-# ============================================================
-# HEATMAP
-# ============================================================
-
-def plot_signature_heatmap(
-    patient_expr,
-    label
-):
-
-    # --------------------------------------------------------
-    # Genes x patients
-    # --------------------------------------------------------
-
-    heatmap_data = (
-        patient_expr[
-            available_genes
-        ]
-        .T
-    )
-
-    # --------------------------------------------------------
-    # Gene-wise z-score
-    # --------------------------------------------------------
-
-    z_data = pd.DataFrame(
-        index=heatmap_data.index,
-        columns=heatmap_data.columns,
-        dtype=float
-    )
-
-    for gene in heatmap_data.index:
-
-        values = (
-            heatmap_data.loc[
-                gene
-            ]
-            .astype(float)
-        )
-
-        sd = values.std(
-            ddof=1
-        )
-
-        if (
-            pd.isna(sd)
-            or sd == 0
-        ):
-
-            z_data.loc[
-                gene
-            ] = values
-
-        else:
-
-            z_data.loc[
-                gene
-            ] = (
-                values - values.mean()
-            ) / sd
-
-    # --------------------------------------------------------
-    # Patient order
-    # --------------------------------------------------------
-
-    response = (
-        obs_patient
-        .loc[
-            z_data.columns,
-            "response"
-        ]
-    )
-
-    patient_order = (
-        response
-        .sort_values()
-        .index
-    )
-
-    z_data = z_data[
-        patient_order
     ]
-
-    # --------------------------------------------------------
-    # Verify genes
-    # --------------------------------------------------------
-
-    missing_heatmap_genes = [
-        gene
-        for gene in available_genes
-        if gene not in z_data.index
-    ]
-
-    if missing_heatmap_genes:
-
-        raise ValueError(
-            "Missing genes in heatmap: "
-            + str(
-                missing_heatmap_genes
-            )
-        )
-
-    # --------------------------------------------------------
-    # Response annotation
-    # --------------------------------------------------------
-
-    response_colors = pd.DataFrame(
-        {
-            "Response": [
-                "R"
-                if response[p] == "R"
-                else "NR"
-                for p in patient_order
-            ]
-        },
-        index=patient_order
+    .sort_values(
+        ["product", "response", "signature_score"]
     )
-
-    # --------------------------------------------------------
-    # Plot
-    # --------------------------------------------------------
-
-    g = sns.clustermap(
-        z_data,
-        row_cluster=False,
-        col_cluster=False,
-        cmap="vlag",
-        center=0,
-        figsize=(
-            max(
-                12,
-                len(patient_order) * 0.45
-            ),
-            8
-        ),
-        xticklabels=True,
-        yticklabels=True,
-        cbar_kws={
-            "label": "Gene-wise z-score"
-        }
-    )
-
-    g.ax_heatmap.set_xlabel(
-        "Patient"
-    )
-
-    g.ax_heatmap.set_ylabel(
-        "Signature gene"
-    )
-
-    g.ax_heatmap.set_title(
-        f"CAR-T response signature — {label}"
-    )
-
-    plt.tight_layout()
-
-    output_file = os.path.join(
-        OUTPUT_DIR,
-        f"signature_heatmap_{label.replace(' ', '_')}.png"
-    )
-
-    plt.savefig(
-        output_file,
-        dpi=300,
-        bbox_inches="tight"
-    )
-
-    plt.close()
-
-    print()
-    print(
-        "Saved:",
-        output_file
-    )
-
-
-plot_signature_heatmap(
-    patient_expr_all_T,
-    "All T"
 )
 
-plot_signature_heatmap(
-    patient_expr_infusion_T,
-    "Infusion T"
-)
+# R vs NR WITHIN EACH PRODUCT
 
+results = []
+for product in ["Kymriah", "Yescarta"]:
 
-# ============================================================
-# SIGNATURE SCORE
-# ============================================================
+    subset = sample_results[
+        sample_results["product"] == product
+    ].copy()
 
-def calculate_signature_score(
-    patient_expr,
-    genes
-):
+    scores_R = subset.loc[
+        subset["response"] == "R",
+        "signature_score"
+    ].dropna()
 
-    expression = (
-        patient_expr[
-            genes
-        ]
-        .astype(float)
-    )
+    scores_NR = subset.loc[
+        subset["response"] == "NR",
+        "signature_score"
+    ].dropna()
 
-    z_expression = pd.DataFrame(
-        index=expression.index,
-        columns=expression.columns,
-        dtype=float
-    )
-
-    for gene in genes:
-
-        values = (
-            expression[gene]
-        )
-
-        sd = values.std(
-            ddof=1
-        )
-
-        if (
-            pd.isna(sd)
-            or sd == 0
-        ):
-
-            z_expression[
-                gene
-            ] = 0.0
-
-        else:
-
-            z_expression[
-                gene
-            ] = (
-                values - values.mean()
-            ) / sd
-
-    score = (
-        z_expression
-        .mean(axis=1)
-    )
-
-    return score
-
-
-# ============================================================
-# RANK-BISERIAL EFFECT
-# ============================================================
-
-def rank_biserial_effect(
-    scores_R,
-    scores_NR
-):
-
-    n_R = len(
-        scores_R
-    )
-
-    n_NR = len(
-        scores_NR
-    )
-
-    U, _ = mannwhitneyu(
+    u_stat, p_value = mannwhitneyu(
         scores_R,
         scores_NR,
         alternative="two-sided"
     )
 
-    effect = (
-        2 * U
-        / (
-            n_R * n_NR
-        )
+    print()
+    print("=" * 60)
+    print(product)
+    print("=" * 60)
+
+    print("R n:", len(scores_R))
+    print("NR n:", len(scores_NR))
+
+    print("R median:", scores_R.median())
+    print("NR median:", scores_NR.median())
+
+    print("R mean:", scores_R.mean())
+    print("NR mean:", scores_NR.mean())
+
+    print("Mann-Whitney U:", u_stat)
+    print("P-value:", p_value)
+
+    n_R = len(scores_R)
+    n_NR = len(scores_NR)
+
+    rank_biserial = (
+        2 * u_stat / (n_R * n_NR)
         - 1
     )
 
-    return effect
+    print(
+        "Rank-biserial effect:",
+        rank_biserial
+    )
 
+    results.append({
+                "n_R": n_R,
+                "n_NR": n_NR,
+                "R_median": scores_R.median(),
+                "NR_median": scores_NR.median(),
+                "R_mean": scores_R.mean(),
+                "NR_mean": scores_NR.mean(),
+                "Mann-Whitney U": u_stat,
+                "p_value": p_value,
+                "rank_biserial": rank_biserial
+            })
 
+results = pd.DataFrame(results)
+
+results.to_csv(os.path.join(OUTPUT_DIR, "test_signature.csv"))
 # ============================================================
-# PERMUTATION TEST
+# PLOT: SIGNATURE SCORE BY PRODUCT AND RESPONSE
 # ============================================================
+plot_data = sample_results.copy()
 
-def permutation_test(
-    scores,
-    labels,
-    n_permutations=10000,
-    seed=42
-):
+plot_data["response"] = pd.Categorical(
+    plot_data["response"], categories=["NR", "R"], ordered=True
+)
 
-    rng = np.random.default_rng(
-        seed
-    )
+# 1. Создаем фигуру и сохраняем ссылку на нее (fig) для последующего сохранения
+fig, ax = plt.subplots(figsize=(8, 6))
 
-    scores = np.asarray(
-        scores,
-        dtype=float
-    )
+# 2. Строим stripplot, передавая созданную ось в параметр ax
+g = sns.stripplot(
+    data=plot_data,
+    x="response",
+    y="signature_score",
+    hue="product",
+    dodge=True,
+    jitter=0.08,
+    size=8,
+    ax=ax,
+)
 
-    labels = np.asarray(
-        labels
-    )
+plt.axhline(0, linestyle="--", linewidth=1)
 
-    observed = (
-        np.median(
-            scores[
-                labels == "R"
-            ]
-        )
-        -
-        np.median(
-            scores[
-                labels == "NR"
-            ]
-        )
-    )
+# 3. Настраиваем подписи напрямую через объект g (или ax), без .ax_heatmap
+g.set_xlabel("Response")
+g.set_ylabel("Signature score")
+g.set_title(
+    "CAR-T response signature in independent scRNA-seq cohort", pad=20
+)
 
-    null_distribution = np.zeros(
-        n_permutations
-    )
+plt.legend(title="Product")
+plt.tight_layout()
 
-    for i in range(
-        n_permutations
-    ):
+output_file = os.path.join(OUTPUT_DIR, "response_signsture.png")
 
-        shuffled_labels = (
-            rng.permutation(
-                labels
-            )
-        )
+# 4. Сохраняем фигуру с помощью сохраненной переменной fig
+fig.savefig(output_file, dpi=300, bbox_inches="tight")
 
-        null_distribution[i] = (
-            np.median(
-                scores[
-                    shuffled_labels == "R"
-                ]
-            )
-            -
-            np.median(
-                scores[
-                    shuffled_labels == "NR"
-                ]
-            )
-        )
-
-    p_value = (
-        (
-            np.sum(
-                np.abs(
-                    null_distribution
-                )
-                >= abs(observed)
-            )
-            + 1
-        )
-        /
-        (
-            n_permutations
-            + 1
-        )
-    )
-
-    return (
-        observed,
-        p_value,
-        null_distribution
-    )
+plt.close()
 
 
-# ============================================================
-# BOOTSTRAP CI
-# ============================================================
+#sensitivity analysis
 
-def bootstrap_median_difference(
-    scores_R,
-    scores_NR,
-    n_bootstraps=5000,
-    seed=42
-):
+# SENSITIVITY ANALYSIS: MINIMUM NUMBER OF CELLS
 
-    rng = np.random.default_rng(
-        seed
-    )
+MIN_CELLS_THRESHOLDS = [
+    50,
+    100,
+    200,
+    500
+]
 
-    scores_R = np.asarray(
-        scores_R,
-        dtype=float
-    )
+sensitivity_results = []
 
-    scores_NR = np.asarray(
-        scores_NR,
-        dtype=float
-    )
+for min_cells in MIN_CELLS_THRESHOLDS:
 
-    differences = np.zeros(
-        n_bootstraps
-    )
+    data = sample_results[
+        sample_results["n_cells"] >= min_cells
+    ].copy()
 
-    for i in range(
-        n_bootstraps
-    ):
+    for product in ["Kymriah", "Yescarta"]:
 
-        boot_R = rng.choice(
+        subset = data[
+            data["product"] == product
+        ].copy()
+
+        scores_R = subset.loc[
+            subset["response"] == "R",
+            "signature_score"
+        ].dropna()
+
+        scores_NR = subset.loc[
+            subset["response"] == "NR",
+            "signature_score"
+        ].dropna()
+
+        n_R = len(scores_R)
+        n_NR = len(scores_NR)
+
+        # Need at least 2 samples in each group
+        if n_R < 2 or n_NR < 2:
+
+            sensitivity_results.append({
+                "min_cells": min_cells,
+                "product": product,
+                "n_total": len(subset),
+                "n_R": n_R,
+                "n_NR": n_NR,
+                "median_R": np.nan,
+                "median_NR": np.nan,
+                "mean_R": np.nan,
+                "mean_NR": np.nan,
+                "median_difference": np.nan,
+                "U": np.nan,
+                "p_value": np.nan,
+                "rank_biserial": np.nan
+            })
+
+            continue
+
+        u_stat, p_value = mannwhitneyu(
             scores_R,
-            size=len(scores_R),
-            replace=True
-        )
-
-        boot_NR = rng.choice(
             scores_NR,
-            size=len(scores_NR),
-            replace=True
+            alternative="two-sided"
         )
 
-        differences[i] = (
-            np.median(
-                boot_R
-            )
-            -
-            np.median(
-                boot_NR
-            )
+        rank_biserial = (
+            2 * u_stat / (n_R * n_NR)
+            - 1
         )
 
-    ci_low, ci_high = (
-        np.percentile(
-            differences,
-            [2.5, 97.5]
-        )
-    )
-
-    return (
-        ci_low,
-        ci_high
-    )
-
-
-# ============================================================
-# MAIN STATISTICAL VALIDATION
-# ============================================================
-
-def validate_signature(
-    patient_expr,
-    label
-):
-
-    # --------------------------------------------------------
-    # Score
-    # --------------------------------------------------------
-
-    scores = (
-        calculate_signature_score(
-            patient_expr,
-            available_genes
-        )
-    )
-
-    # --------------------------------------------------------
-    # Response
-    # --------------------------------------------------------
-
-    response = (
-        obs_patient
-        .loc[
-            scores.index,
-            "response"
-        ]
-        .astype(str)
-    )
-
-    # --------------------------------------------------------
-    # Groups
-    # --------------------------------------------------------
-
-    scores_R = scores[
-        response == "R"
-    ]
-
-    scores_NR = scores[
-        response == "NR"
-    ]
-
-    if (
-        len(scores_R) == 0
-        or
-        len(scores_NR) == 0
-    ):
-
-        raise ValueError(
-            f"{label}: "
-            "one response group is empty."
-        )
-
-    # --------------------------------------------------------
-    # Permutation test
-    # --------------------------------------------------------
-
-    (
-        observed_difference,
-        permutation_p,
-        null_distribution
-    ) = permutation_test(
-
-        scores.values,
-
-        response.values,
-
-        n_permutations=(
-            N_PERMUTATIONS
-        ),
-
-        seed=RANDOM_SEED
-    )
-
-    # --------------------------------------------------------
-    # Mann-Whitney
-    # --------------------------------------------------------
-
-    U, mw_p = mannwhitneyu(
-
-        scores_R,
-
-        scores_NR,
-
-        alternative="two-sided"
-    )
-
-    # --------------------------------------------------------
-    # Effect size
-    # --------------------------------------------------------
-
-    effect = (
-        rank_biserial_effect(
-            scores_R,
-            scores_NR
-        )
-    )
-
-    # --------------------------------------------------------
-    # Bootstrap CI
-    # --------------------------------------------------------
-
-    (
-        ci_low,
-        ci_high
-    ) = bootstrap_median_difference(
-
-        scores_R,
-
-        scores_NR,
-
-        n_bootstraps=(
-            N_BOOTSTRAPS
-        ),
-
-        seed=RANDOM_SEED
-    )
-
-    # --------------------------------------------------------
-    # Statistics
-    # --------------------------------------------------------
-
-    statistics = pd.DataFrame({
-
-        "analysis": [
-            label
-        ],
-
-        "n_R": [
-            len(scores_R)
-        ],
-
-        "n_NR": [
-            len(scores_NR)
-        ],
-
-        "median_R": [
-            np.median(
-                scores_R
-            )
-        ],
-
-        "median_NR": [
-            np.median(
-                scores_NR
-            )
-        ],
-
-        "median_difference_R_minus_NR": [
-            observed_difference
-        ],
-
-        "permutation_p": [
-            permutation_p
-        ],
-
-        "mannwhitney_U": [
-            U
-        ],
-
-        "mannwhitney_p": [
-            mw_p
-        ],
-
-        "rank_biserial_effect": [
-            effect
-        ],
-
-        "bootstrap_CI_low": [
-            ci_low
-        ],
-
-        "bootstrap_CI_high": [
-            ci_high
-        ]
-    })
-
-    # --------------------------------------------------------
-    # Save patient scores
-    # --------------------------------------------------------
-
-    scores_output = pd.DataFrame({
-
-        "patient_id": scores.index,
-
-        "signature_score": scores.values,
-
-        "response": response.values
-    })
-
-    scores_output.to_csv(
-
-        os.path.join(
-            OUTPUT_DIR,
-            f"signature_scores_{label}.tsv"
-        ),
-
-        sep="\t",
-
-        index=False
-    )
-
-    # --------------------------------------------------------
-    # Save statistics
-    # --------------------------------------------------------
-
-    statistics.to_csv(
-
-        os.path.join(
-            OUTPUT_DIR,
-            f"signature_statistics_{label}.tsv"
-        ),
-
-        sep="\t",
-
-        index=False
-    )
-
-    # --------------------------------------------------------
-    # Print
-    # --------------------------------------------------------
-
-    print()
-    print(
-        "=" * 60
-    )
-
-    print(
-        f"SIGNATURE VALIDATION: {label}"
-    )
-
-    print(
-        "=" * 60
-    )
-
-    print(
-        f"R:  n={len(scores_R)}, "
-        f"median={np.median(scores_R):.4f}"
-    )
-
-    print(
-        f"NR: n={len(scores_NR)}, "
-        f"median={np.median(scores_NR):.4f}"
-    )
-
-    print(
-        f"Median difference R-NR: "
-        f"{observed_difference:.4f}"
-    )
-
-    print(
-        f"Permutation p: "
-        f"{permutation_p:.5f}"
-    )
-
-    print(
-        f"Mann-Whitney p: "
-        f"{mw_p:.5f}"
-    )
-
-    print(
-        f"Rank-biserial effect: "
-        f"{effect:.4f}"
-    )
-
-    print(
-        "Bootstrap 95% CI: "
-        f"[{ci_low:.4f}, "
-        f"{ci_high:.4f}]"
-    )
-
-    return {
-
-        "scores": scores,
-
-        "response": response,
-
-        "statistics": statistics,
-
-        "null_distribution": (
-            null_distribution
-        )
-    }
-
-
-# ============================================================
-# RUN MAIN VALIDATION
-# ============================================================
-
-validation_all_T = (
-    validate_signature(
-        patient_expr_all_T,
-        "All_T"
-    )
+        sensitivity_results.append({
+            "min_cells": min_cells,
+            "product": product,
+            "n_total": len(subset),
+            "n_R": n_R,
+            "n_NR": n_NR,
+            "median_R": scores_R.median(),
+            "median_NR": scores_NR.median(),
+            "mean_R": scores_R.mean(),
+            "mean_NR": scores_NR.mean(),
+            "median_difference": (
+                scores_R.median()
+                - scores_NR.median()
+            ),
+            "U": u_stat,
+            "p_value": p_value,
+            "rank_biserial": rank_biserial
+        })
+
+
+sensitivity_results = pd.DataFrame(
+    sensitivity_results
 )
 
-validation_infusion_T = (
-    validate_signature(
-        patient_expr_infusion_T,
-        "Infusion_T"
-    )
-)
+sensitivity_results.to_csv(os.path.join(OUTPUT_DIR, "sensitivity_results_gse197628.csv"))
 
+roc_results = []
 
-# ============================================================
-# SIGNATURE SCORE PLOTS
-# ============================================================
+for product in ["Kymriah", "Yescarta"]:
 
-def plot_signature_score(
-    validation_result,
-    label
-):
+    subset = sample_results[
+        sample_results["product"] == product
+    ].copy()
 
-    scores = (
-        validation_result[
-            "scores"
-        ]
-    )
+    subset = subset[
+        subset["response"].isin(["R", "NR"])
+    ].copy()
 
-    response = (
-        validation_result[
-            "response"
-        ]
+    y_true = (
+        subset["response"] == "R"
+    ).astype(int)
+
+    y_score = subset["signature_score"]
+
+    auc = roc_auc_score(
+        y_true,
+        y_score
     )
 
-    plot_data = pd.DataFrame({
+    fpr, tpr, thresholds = roc_curve(
+        y_true,
+        y_score
+    )
 
-        "score": scores,
-
-        "response": response
+    roc_results.append({
+        "product": product,
+        "n_total": len(subset),
+        "n_R": (y_true == 1).sum(),
+        "n_NR": (y_true == 0).sum(),
+        "AUC": auc
     })
 
-    plt.figure(
-        figsize=(6, 5)
+    plt.figure(figsize=(6, 6))
+
+    plt.plot(
+        fpr,
+        tpr,
+        label=f"AUC = {auc:.3f}"
     )
 
-    sns.boxplot(
-        data=plot_data,
-        x="response",
-        y="score"
+    plt.plot(
+        [0, 1],
+        [0, 1],
+        linestyle="--"
     )
 
-    sns.stripplot(
-        data=plot_data,
-        x="response",
-        y="score",
-        color="black",
-        alpha=0.7,
-        jitter=0.12
-    )
-
-    plt.axhline(
-        0,
-        linestyle="--",
-        linewidth=1
-    )
-
-    plt.xlabel(
-        "Response"
-    )
-
-    plt.ylabel(
-        "Signature score"
-    )
-
+    plt.xlabel("False positive rate")
+    plt.ylabel("True positive rate")
     plt.title(
-        f"CAR-T response signature — {label}"
+        f"ROC — {product}"
     )
+
+    plt.legend()
 
     plt.tight_layout()
 
-    output_file = os.path.join(
-
-        OUTPUT_DIR,
-
-        f"signature_score_"
-        f"{label.replace(' ', '_')}.png"
-    )
-
     plt.savefig(
-        output_file,
+        os.path.join(
+            OUTPUT_DIR,
+            f"ROC_{product}.png"
+        ),
         dpi=300,
         bbox_inches="tight"
     )
 
     plt.close()
 
-    print()
-    print(
-        "Saved:",
-        output_file
-    )
 
-
-plot_signature_score(
-    validation_all_T,
-    "All T"
+roc_results = pd.DataFrame(
+    roc_results
 )
 
-plot_signature_score(
-    validation_infusion_T,
-    "Infusion T"
-)
-
-
-# ============================================================
-# SENSITIVITY ANALYSIS
-# ============================================================
-
-def sensitivity_analysis(
-    patient_expr,
-    cell_counts,
-    label,
-    thresholds
-):
-
-    results = []
-
-    for threshold in thresholds:
-
-        print()
-        print(
-            f"Running {label} "
-            f"with >= {threshold} cells..."
-        )
-
-        # ----------------------------------------------------
-        # Select patients
-        # ----------------------------------------------------
-
-        eligible_patients = (
-            cell_counts[
-                cell_counts >= threshold
-            ]
-            .index
-        )
-
-        expr = (
-            patient_expr
-            .loc[
-                patient_expr.index.isin(
-                    eligible_patients
-                )
-            ]
-            .copy()
-        )
-
-        # ----------------------------------------------------
-        # Skip if too few patients
-        # ----------------------------------------------------
-
-        if len(expr) < 4:
-
-            print(
-                "Too few patients. "
-                "Skipping."
-            )
-
-            continue
-
-        # ----------------------------------------------------
-        # Score
-        # ----------------------------------------------------
-
-        scores = (
-            calculate_signature_score(
-                expr,
-                available_genes
-            )
-        )
-
-        # ----------------------------------------------------
-        # Response
-        # ----------------------------------------------------
-
-        response = (
-            obs_patient
-            .loc[
-                scores.index,
-                "response"
-            ]
-            .astype(str)
-        )
-
-        scores_R = scores[
-            response == "R"
-        ]
-
-        scores_NR = scores[
-            response == "NR"
-        ]
-
-        if (
-            len(scores_R) < 2
-            or
-            len(scores_NR) < 2
-        ):
-
-            print(
-                "Too few patients in "
-                "one response group. "
-                "Skipping."
-            )
-
-            continue
-
-        # ----------------------------------------------------
-        # Permutation
-        # ----------------------------------------------------
-
-        (
-            observed_difference,
-            permutation_p,
-            _
-        ) = permutation_test(
-
-            scores.values,
-
-            response.values,
-
-            n_permutations=(
-                N_PERMUTATIONS
-            ),
-
-            seed=RANDOM_SEED
-        )
-
-        # ----------------------------------------------------
-        # Mann-Whitney
-        # ----------------------------------------------------
-
-        U, mw_p = mannwhitneyu(
-
-            scores_R,
-
-            scores_NR,
-
-            alternative="two-sided"
-        )
-
-        # ----------------------------------------------------
-        # Effect
-        # ----------------------------------------------------
-
-        effect = (
-            rank_biserial_effect(
-                scores_R,
-                scores_NR
-            )
-        )
-
-        # ----------------------------------------------------
-        # Bootstrap CI
-        # ----------------------------------------------------
-
-        (
-            ci_low,
-            ci_high
-        ) = bootstrap_median_difference(
-
-            scores_R,
-
-            scores_NR,
-
-            n_bootstraps=(
-                N_BOOTSTRAPS
-            ),
-
-            seed=RANDOM_SEED
-        )
-
-        # ----------------------------------------------------
-        # Store
-        # ----------------------------------------------------
-
-        results.append({
-
-            "analysis": label,
-
-            "min_cells": threshold,
-
-            "n_patients": len(scores),
-
-            "n_R": len(scores_R),
-
-            "n_NR": len(scores_NR),
-
-            "median_R": np.median(
-                scores_R
-            ),
-
-            "median_NR": np.median(
-                scores_NR
-            ),
-
-            "median_difference_R_minus_NR": (
-                observed_difference
-            ),
-
-            "permutation_p": (
-                permutation_p
-            ),
-
-            "mannwhitney_U": U,
-
-            "mannwhitney_p": (
-                mw_p
-            ),
-
-            "rank_biserial_effect": (
-                effect
-            ),
-
-            "bootstrap_CI_low": (
-                ci_low
-            ),
-
-            "bootstrap_CI_high": (
-                ci_high
-            )
-        })
-
-        print(
-            f"Patients: {len(scores)}"
-        )
-
-        print(
-            f"R={len(scores_R)}, "
-            f"NR={len(scores_NR)}"
-        )
-
-        print(
-            f"Permutation p="
-            f"{permutation_p:.5f}"
-        )
-
-        print(
-            f"Effect="
-            f"{effect:.4f}"
-        )
-
-    # --------------------------------------------------------
-    # Results table
-    # --------------------------------------------------------
-
-    results = pd.DataFrame(
-        results
-    )
-
-    output_file = os.path.join(
-
+roc_results.to_csv(
+    os.path.join(
         OUTPUT_DIR,
-
-        f"sensitivity_analysis_{label}.tsv"
-    )
-
-    results.to_csv(
-
-        output_file,
-
-        sep="\t",
-
-        index=False
-    )
-
-    print()
-    print(
-        "Saved:",
-        output_file
-    )
-
-    return results
-
-
-# ============================================================
-# RUN SENSITIVITY ANALYSIS
-# ============================================================
-
-sensitivity_all_T = (
-    sensitivity_analysis(
-
-        patient_expr_all_T,
-
-        cell_counts_all_T,
-
-        "All_T",
-
-        MIN_CELLS_THRESHOLDS
-    )
+        "roc_auc_results.tsv"
+    ),
+    sep="\t",
+    index=False
 )
-
-sensitivity_infusion_T = (
-    sensitivity_analysis(
-
-        patient_expr_infusion_T,
-
-        cell_counts_infusion_T,
-
-        "Infusion_T",
-
-        MIN_CELLS_THRESHOLDS
-    )
-)
-
-
-# ============================================================
-# PRINT SENSITIVITY TABLES
-# ============================================================
-
-print()
-print()
-print(
-    "=" * 80
-)
-
-print(
-    "SENSITIVITY ANALYSIS — ALL T"
-)
-
-print(
-    "=" * 80
-)
-
-print(
-    sensitivity_all_T.to_string(
-        index=False
-    )
-)
-
-
-print()
-print()
-print(
-    "=" * 80
-)
-
-print(
-    "SENSITIVITY ANALYSIS — INFUSION T"
-)
-
-print(
-    "=" * 80
-)
-
-print(
-    sensitivity_infusion_T.to_string(
-        index=False
-    )
-)
-
-
-# ============================================================
-# FINISHED
-# ============================================================
-
-print()
-print()
-print(
-    "=" * 80
-)
-
-print(
-    "SIGNATURE VALIDATION COMPLETED"
-)
-
-print(
-    "Output directory:"
-)
-
-print(
-    OUTPUT_DIR
-)
-
-print(
-    "=" * 80
-)
-
