@@ -1,3 +1,4 @@
+#%%
 import os
 import tarfile
 import scanpy as sc
@@ -8,8 +9,13 @@ from scipy.io import mmread
 import matplotlib.pyplot as plt
 from scipy.stats import mannwhitneyu
 from sklearn.metrics import roc_auc_score, roc_curve
+import gseapy as gp
+import seaborn as sns
+from pydeseq2.dds import DeseqDataSet
+from pydeseq2.default_inference import DefaultInference
+from pydeseq2.ds import DeseqStats
 
-
+#%%
 input_dir = (
     "/Users/darakuzmina/Desktop/CAR_T/"
     "data/scRNAseq/GSE151511"
@@ -29,7 +35,7 @@ os.makedirs(
     output_dir,
     exist_ok=True
 )
-
+#%%
 #LOAD metadata
 def info_parser(soft_file):
    
@@ -493,7 +499,7 @@ summary.to_csv(
     index=False
 )
 
-'''
+
 signature = pd.read_csv(
     "/Users/darakuzmina/Desktop/CAR_T/"
     "results/13_signature/CAR_T_response_signature.tsv",
@@ -509,8 +515,8 @@ signature_genes = (
     .str.strip()
     .tolist()
 )
-'''
 
+'''
 signature = pd.read_csv(
     "/Users/darakuzmina/Desktop/CAR_T/"
     "results/15_signature_validation/"
@@ -524,6 +530,7 @@ signature_genes = (
     .str.strip()
     .tolist()
 )
+'''
 
 
 # remove duplicates while preserving order
@@ -977,4 +984,776 @@ print(
     "Saved:",
     score_plot_file
 )
+
+
+#%%
+# ============================================================
+# 1. HEATMAP: SIGNATURE GENES ACROSS PATIENTS
+# ============================================================
+
+import seaborn as sns
+
+print("\nCreating signature gene heatmap...")
+
+# Use the expression matrix created above
+heatmap_data = patient_expression.copy()
+
+# Keep only genes that are present
+heatmap_genes = [
+    gene for gene in signature_genes
+    if gene in heatmap_data.columns
+]
+
+heatmap_data = heatmap_data[heatmap_genes]
+
+# Z-score each gene across patients
+heatmap_z = (
+    heatmap_data - heatmap_data.mean(axis=0)
+) / heatmap_data.std(axis=0, ddof=1)
+
+heatmap_z = heatmap_z.replace(
+    [np.inf, -np.inf],
+    np.nan
+).fillna(0)
+
+# Response annotation
+response_annotation = (
+    analysis_summary
+    .drop_duplicates("patient_id")
+    .set_index("patient_id")
+    .reindex(heatmap_z.index)["response"]
+)
+
+sample_order = (
+    response_annotation
+    .sort_values(key=lambda x: x.map({"PD": 0, "CR": 1}))
+    .index
+)
+
+# Reorder expression matrix and response annotation
+heatmap_data = heatmap_data.loc[sample_order]
+heatmap_z = heatmap_z.loc[sample_order]
+response_annotation = response_annotation.loc[sample_order]
+
+response_palette = {
+    "PD": "#1F77B4",
+    "CR": "#D62728"
+}
+
+col_colors = pd.DataFrame({
+    "Response": response_annotation.map(response_palette)
+}, index=heatmap_z.index)
+
+
+from matplotlib.patches import Patch
+# Cluster genes, preserve patient order
+g = sns.clustermap(
+    heatmap_z.T,
+    cmap="vlag",
+    center=0,
+    col_colors=col_colors,
+    col_cluster=False,
+    row_cluster=True,
+    xticklabels=True,
+    yticklabels=True,
+    figsize=(14, 10),
+    cbar_kws={"label": "Z-score"}
+)
+
+legend_elements = [
+    Patch(
+        facecolor=color,
+        label=label
+    )
+    for label, color
+    in response_palette.items()
+]
+
+g.ax_heatmap.set_title(
+    "GSE151511: response signature expression",
+    pad=20,
+    y=1.03
+)
+
+# Legend: move it to the right of the heatmap
+g.ax_heatmap.legend(
+    handles=legend_elements,
+    title="Response",
+    loc="upper left",
+    bbox_to_anchor=(1.15, 1.0),
+    frameon=False,
+    borderaxespad=0
+)
+
+g.ax_heatmap.set_xlabel("Patients")
+g.ax_heatmap.set_ylabel("Signature genes")
+
+
+heatmap_file = os.path.join(
+    output_dir,
+    "GSE151511_signature_gene_heatmap.png"
+)
+
+g.savefig(
+    heatmap_file,
+    dpi=300,
+    bbox_inches="tight"
+)
+
+plt.close("all")
+
+print("Saved:", heatmap_file)
+#%%
+
+# ============================================================
+# 2. RANKED GSEA: GENE PANELS
+# ============================================================
+
+
+panel_dir = (
+    "/Users/darakuzmina/Desktop/CAR_T/"
+    "data/raw"
+)
+
+# Files are read in the requested order
+panel_files = [
+    ("P1", "gene_panel_1.csv"),
+    ("P2", "gene_panel_5.csv"),
+    ("P3", "gene_panel_3.csv"),
+    ("P4", "gene_panel_4.csv")
+]
+
+panels = {}
+
+for prefix, filename in panel_files:
+
+    panel_path = os.path.join(
+        panel_dir,
+        filename
+    )
+
+    if not os.path.exists(panel_path):
+        print("WARNING: panel file not found:", panel_path)
+        continue
+
+    panel_df = pd.read_csv(panel_path)
+
+    for col in panel_df.columns:
+
+        genes = (
+            panel_df[col]
+            .dropna()
+            .astype(str)
+            .str.strip()
+        )
+
+        genes = [
+            gene for gene in genes
+            if gene and gene.lower() != "nan"
+        ]
+
+        panel_name = f"{prefix}_{col}"
+
+        # Remove duplicate genes while preserving order
+        panels[panel_name] = list(
+            dict.fromkeys(genes)
+        )
+
+print("\nGene panels loaded:")
+for panel_name, genes in panels.items():
+    print(panel_name, len(genes), "genes")
+
+
+# ============================================================
+# 3. LOAD SAMPLE METADATA FOR PSEUDOBULK
+# ============================================================
+
+gsea_metadata = summary[
+    summary["response"].isin(["CR", "PD"])
+].copy()
+
+gsea_metadata["cell_type"] = (
+    gsea_metadata["cell_type"]
+    .astype(str)
+    .str.strip()
+)
+
+gsea_metadata["response"] = (
+    gsea_metadata["response"]
+    .astype(str)
+    .str.strip()
+)
+
+print("\nCell types found in metadata:")
+print(
+    summary["cell_type"]
+    .value_counts(dropna=False)
+    .to_string()
+)
+
+print("\nUnique cell types (repr):")
+for ct in summary["cell_type"].dropna().unique():
+    print(repr(ct))
+
+#%%
+
+cell_types = [
+    "CART cells"
+]
+
+gsea_results = []
+de_results = []
+
+
+# ============================================================
+# 4. PSEUDOBULK DE AND PRERANK GSEA
+# ============================================================
+
+for cell_type in cell_types:
+
+    print("\n" + "=" * 70)
+    print("Cell type:", cell_type)
+    print("=" * 70)
+
+    subset = gsea_metadata[
+        gsea_metadata["cell_type"] == cell_type
+    ].copy()
+
+    if subset.empty:
+        print("No samples for", cell_type)
+        continue
+
+    # --------------------------------------------------------
+    # Aggregate raw counts per patient
+    # --------------------------------------------------------
+
+    pseudobulk_counts = []
+    pseudobulk_metadata = []
+
+    for patient_id, patient_rows in subset.groupby("patient_id"):
+
+        responses = patient_rows["response"].unique()
+
+        if len(responses) != 1:
+            print(
+                "WARNING: inconsistent response for patient",
+                patient_id
+            )
+            continue
+
+        patient_counts = []
+
+        for _, row in patient_rows.iterrows():
+
+            sample_id = row["sample_id"]
+
+            h5ad_file = os.path.join(
+                output_dir,
+                f"{patient_id}.h5ad"
+            )
+
+            if not os.path.exists(h5ad_file):
+                print("Missing h5ad:", h5ad_file)
+                continue
+
+            adata_sample = sc.read_h5ad(h5ad_file)
+
+            # Keep raw counts from the matching cell type
+            # and sample, to avoid mixing different cell types.
+            cell_mask = (
+                adata_sample.obs["cell_type"].astype(str).values
+                == cell_type
+            )
+
+            if "sample_id" in adata_sample.obs.columns:
+                cell_mask &= (
+                    adata_sample.obs["sample_id"].astype(str).values
+                    == sample_id
+                )
+
+            if not np.any(cell_mask):
+                continue
+
+            X = adata_sample.X[cell_mask, :]
+
+            if not isinstance(X, np.ndarray):
+                X = X.toarray()
+
+            X = np.asarray(X, dtype=np.int64)
+
+            # Sum counts across cells
+            counts = X.sum(axis=0)
+
+            gene_symbols = (
+                adata_sample.var["gene_symbol"]
+                .astype(str)
+                .str.strip()
+                .values
+            )
+
+            counts_df = pd.DataFrame({
+                "gene": gene_symbols,
+                "count": counts
+            })
+
+            counts_df = counts_df[
+                counts_df["gene"].notna()
+                & (counts_df["gene"] != "")
+                & (counts_df["gene"] != "nan")
+            ]
+
+            # Aggregate duplicated gene symbols
+            counts_df = counts_df.groupby(
+                "gene",
+                as_index=True
+            )["count"].sum()
+
+            patient_counts.append(counts_df)
+
+        if not patient_counts:
+            continue
+
+        # If several GSM samples exist for one patient,
+        # sum their counts by gene.
+        combined_counts = pd.concat(
+            patient_counts,
+            axis=1
+        ).fillna(0).sum(axis=1)
+
+        pseudobulk_counts.append(
+            combined_counts.rename(patient_id)
+        )
+
+        pseudobulk_metadata.append({
+            "patient_id": patient_id,
+            "response": responses[0]
+        })
+
+    if len(pseudobulk_counts) < 2:
+        print("Not enough pseudobulk samples.")
+        continue
+
+    counts_df = pd.concat(
+        pseudobulk_counts,
+        axis=1
+    ).fillna(0)
+
+    counts_df = counts_df.round().astype(int)
+
+    meta_df = pd.DataFrame(
+        pseudobulk_metadata
+    ).drop_duplicates("patient_id")
+
+    meta_df = meta_df.set_index("patient_id")
+    meta_df = meta_df.reindex(counts_df.columns)
+
+    # Drop genes with zero total counts
+    counts_df = counts_df.loc[
+        counts_df.sum(axis=1) > 0
+    ]
+
+    print("Pseudobulk matrix:", counts_df.shape)
+    print("Responses:")
+    print(meta_df["response"].value_counts())
+
+    # --------------------------------------------------------
+    # Check sample numbers
+    # --------------------------------------------------------
+
+    if (
+        (meta_df["response"] == "CR").sum() < 2
+        or (meta_df["response"] == "PD").sum() < 2
+    ):
+        print(
+            "WARNING: fewer than 2 patients in one response group; "
+            "DESeq2/GSEA may be unreliable."
+        )
+
+    # --------------------------------------------------------
+    # DESeq2
+    # --------------------------------------------------------
+
+    counts_for_deseq = counts_df.T.copy()
+    counts_for_deseq.index = counts_for_deseq.index.astype(str)
+
+    meta_for_deseq = meta_df.copy()
+    meta_for_deseq.index = meta_for_deseq.index.astype(str)
+
+    meta_for_deseq["response"] = pd.Categorical(
+        meta_for_deseq["response"],
+        categories=["PD", "CR"]
+    )
+
+    inference = DefaultInference(
+        n_cpus=4
+    )
+
+    dds = DeseqDataSet(
+        counts=counts_for_deseq,
+        metadata=meta_for_deseq,
+        design="~response",
+        refit_cooks=True,
+        inference=inference
+    )
+
+    dds.deseq2()
+
+    stat_res = DeseqStats(
+        dds,
+        contrast=["response", "CR", "PD"],
+        inference=inference
+    )
+
+    stat_res.summary()
+
+    de = stat_res.results_df.copy()
+    de.index.name = "gene"
+    de = de.reset_index()
+
+    de["cell_type"] = cell_type
+
+    de_file = os.path.join(
+        output_dir,
+        f"GSE151511_pseudobulk_DE_{cell_type.replace('+', 'plus').replace(' ', '_')}.tsv"
+    )
+
+    de.to_csv(
+        de_file,
+        sep="\t",
+        index=False
+    )
+
+    print("Saved DE results:", de_file)
+
+    de_results.append(de)
+
+    # --------------------------------------------------------
+    # Create ranking for preranked GSEA
+    # Wald statistic ranks genes by evidence and direction.
+    # Positive = higher in CR; negative = higher in PD.
+    # --------------------------------------------------------
+
+    ranking = de[
+        ["gene", "stat"]
+    ].dropna()
+
+    ranking = ranking[
+        np.isfinite(ranking["stat"])
+    ]
+
+    ranking = ranking.drop_duplicates(
+        subset="gene"
+    )
+
+    ranking = ranking.sort_values(
+        "stat",
+        ascending=False
+    )
+
+    ranking_file = os.path.join(
+        output_dir,
+        f"GSE151511_GSEA_ranking_{cell_type.replace('+', 'plus').replace(' ', '_')}.tsv"
+    )
+
+    ranking.to_csv(
+        ranking_file,
+        sep="\t",
+        index=False
+    )
+
+    print("Saved ranking:", ranking_file)
+
+    # --------------------------------------------------------
+    # Run preranked GSEA for every panel
+    # --------------------------------------------------------
+
+    for panel_name, panel_genes in panels.items():
+
+        overlap = set(panel_genes) & set(ranking["gene"])
+
+        print(
+            panel_name,
+            "- genes in ranking:",
+            len(overlap)
+        )
+
+        if len(overlap) < 3:
+            print("Skipping panel with fewer than 3 overlapping genes.")
+            continue
+
+        try:
+            pre_res = gp.prerank(
+                rnk=ranking[["gene", "stat"]],
+                gene_sets={panel_name: panel_genes},
+                min_size=3,
+                max_size=500,
+                permutation_num=1000,
+                seed=42,
+                outdir=None,
+                verbose=False
+            )
+
+            res = pre_res.res2d.copy()
+
+            if res.empty:
+                continue
+
+            res["panel"] = panel_name
+            res["cell_type"] = cell_type
+
+            gsea_results.append(res)
+
+        except Exception as e:
+            print(
+                "GSEA failed for",
+                panel_name,
+                cell_type,
+                ":",
+                e
+            )
+
+
+# ============================================================
+# 5. SAVE GSEA RESULTS
+# ============================================================
+#%%
+if gsea_results:
+
+    gsea_all = pd.concat(
+        gsea_results,
+        ignore_index=True
+    )
+
+    gsea_file = os.path.join(
+        output_dir,
+        "GSE151511_ranked_GSEA_all_panels.tsv"
+    )
+
+    gsea_all.to_csv(
+        gsea_file,
+        sep="\t",
+        index=False
+    )
+
+    print("\nSaved GSEA results:", gsea_file)
+
+    # Normalize GSEApy output column names
+    col_lookup = {
+    str(col).strip().lower(): col
+    for col in gsea_all.columns
+}
+
+    nes_col = col_lookup.get("nes")
+    fdr_col = col_lookup.get("fdr q-val")
+
+
+    if nes_col is None:
+        raise KeyError(
+            "NES column not found in GSEA results: "
+            + str(gsea_all.columns.tolist())
+        )
+
+    if fdr_col is None:
+        raise KeyError(
+            "FDR column not found in GSEA results: "
+            + str(gsea_all.columns.tolist())
+        )
+
+    # --------------------------------------------------------
+    # Combined NES matrix
+    # Rows = panels, columns = cell types
+    # --------------------------------------------------------
+
+    gsea_all["NES"] = pd.to_numeric(
+        gsea_all[nes_col],
+        errors="coerce"
+    )
+
+    gsea_all["FDR q-val"] = pd.to_numeric(
+        gsea_all[fdr_col],
+        errors="coerce"
+    )
+
+    gsea_all["cell_type"] = (
+        gsea_all["cell_type"].astype(str)
+    )
+
+    nes_matrix = gsea_all.pivot_table(
+        index="panel",
+        columns="cell_type",
+        values="NES",
+        aggfunc="first"
+    )
+
+    fdr_matrix = gsea_all.pivot_table(
+        index="panel",
+        columns="cell_type",
+        values="FDR q-val",
+        aggfunc="first"
+    )
+
+    
+    
+
+    # Keep only selected panels in the exact requested order
+
+    selected_panels = [
+    # Naive / memory
+            "P1_Naive_Like",
+            "P3_T_EarlyMem",
+            "P1_Central_Memory",
+            "P3_T_NonExhausted",
+        
+            # Effector-memory
+            "P1_Effector_Memory",
+            "P1_Tissue_resident_memory",
+        
+            # Effector
+            "P1_Effector",
+            "P1_Cytotoxic",
+        
+            # Activation / functional states
+            "P4_BTM_T cell_activation",
+            "P1_Th1",
+            "P1_TfH",
+            "P1_Treg",
+        
+            # Exhaustion trajectory
+            "P1_Pre_Exhausted",
+            "P2_TPEX_up",
+            "P2_TEX_int_up",
+            "P2_TEX_term_up",
+            "P4_Exhaustion_Wherry",
+            "P4_Exhaustion_Long",
+            "P1_Exhausted_T",
+            "P3_Exhausted_T"
+]
+
+# Warn if requested signatures are absent from GSEA results
+    missing_panels = [
+    p for p in selected_panels
+    if p not in nes_matrix.index
+]
+
+    if missing_panels:
+        print("WARNING: these panels are absent from GSEA results:")
+        print(missing_panels)
+
+# Keep only available signatures, preserving the specified order
+    panel_order = [
+    p for p in selected_panels
+    if p in nes_matrix.index
+]
+
+    nes_matrix = nes_matrix.reindex(index=panel_order)
+
+    desired_cell_order = [
+    "CART cells"
+]
+
+    nes_matrix = nes_matrix.reindex(
+    columns=[
+        c for c in desired_cell_order
+        if c in nes_matrix.columns
+    ]
+)
+
+    fdr_matrix = fdr_matrix.reindex(
+    index=nes_matrix.index,
+    columns=nes_matrix.columns
+)
+
+
+    # --------------------------------------------------------
+    # Significance stars
+    # *  FDR < 0.05 and |NES| > 1
+    # ** FDR < 0.01 and |NES| > 1
+    # --------------------------------------------------------
+
+    annot = pd.DataFrame(
+        "",
+        index=nes_matrix.index,
+        columns=nes_matrix.columns
+    )
+
+    for panel_name in nes_matrix.index:
+        for ct in nes_matrix.columns:
+
+            nes = nes_matrix.loc[panel_name, ct]
+            fdr = fdr_matrix.loc[panel_name, ct]
+
+            if pd.isna(nes) or pd.isna(fdr):
+                continue
+
+            if abs(nes) > 1 and fdr < 0.05:
+                annot.loc[panel_name, ct] = "**"
+
+            elif abs(nes) > 1 and fdr < 0.1:
+                annot.loc[panel_name, ct] = f"*"
+
+
+    # Symmetric color scale centered at zero
+
+    if nes_matrix.empty:
+        print(
+        "NES matrix is empty. Check cell_type names "
+        "and GSEA results."
+    )
+    else:
+        max_abs_nes = np.nanmax(
+        np.abs(nes_matrix.to_numpy())
+    )
+  
+
+        if not np.isfinite(max_abs_nes) or max_abs_nes == 0:
+            max_abs_nes = 1
+
+        plt.figure(
+        figsize=(
+            7,
+            max(4, len(nes_matrix) * 0.45)
+        )
+    )
+
+        sns.heatmap(
+        nes_matrix,
+        cmap="RdBu_r",
+        center=0,
+        vmin=-max_abs_nes,
+        vmax=max_abs_nes,
+        annot=annot,
+        fmt="",
+        linewidths=0.5,
+        linecolor="white",
+        cbar_kws={"label": "Normalized Enrichment Score (NES)"}
+    )
+
+        plt.xlabel("")
+        plt.ylabel("Gene panels")
+        plt.title(
+        "GSE151511: ranked GSEA by CAR T-cell subtype"
+    )
+
+        plt.tight_layout()
+
+        gsea_heatmap_file = os.path.join(
+        output_dir,
+        "GSE151511_ranked_GSEA_NES_heatmap.png"
+    )
+
+        plt.savefig(
+        gsea_heatmap_file,
+        dpi=300,
+        bbox_inches="tight"
+    )
+
+        plt.close()
+
+        print(
+        "Saved GSEA NES heatmap:",
+        gsea_heatmap_file
+    )
+
+
+# %%
 

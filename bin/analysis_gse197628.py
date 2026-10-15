@@ -111,7 +111,7 @@ signature = pd.read_csv(
     SIGNATURE_FILE
 )
 
-'''
+
 available_genes = (
     signature.loc[
         signature["direction"] == "responder_UP",
@@ -131,7 +131,7 @@ available_genes = (
     .str.strip()
     .tolist()
 )
-
+'''
 
 # remove duplicates while preserving order
 available_genes = list(

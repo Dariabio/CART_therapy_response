@@ -847,12 +847,12 @@ def ranked_gsea_heatmap(
     "TEX_term_up",
     "Exhaustion_Wherry",
     "Exhaustion_Long",
-    "Exhausted_T",
+    "Exhausted_T"
 ]
 
 
 
-
+    '''
     # Remove P1-P4 prefix from signature names
 
     def clean_signature_names(index):
@@ -867,11 +867,13 @@ def ranked_gsea_heatmap(
         )
         .str.strip()
     )
+    '''
 
 
     nes_mat = nes_mat.copy()
     fdr_mat = fdr_mat.copy()
 
+    '''
     nes_mat.index = clean_signature_names(
     nes_mat.index
 )
@@ -879,6 +881,7 @@ def ranked_gsea_heatmap(
     fdr_mat.index = clean_signature_names(
     fdr_mat.index
 )
+    '''
 
 
 # --------------------------------------------------------
