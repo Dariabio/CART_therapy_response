@@ -16,6 +16,7 @@ ssGSEA based on predefined CAR-T gene panels
 Statistical comparison of ssGSEA scores between clinical groups
 Visualization and integration of GSEA results
 Longitudinal analysis of CAR-T signatures across timepoints
+Signature discovery of response
 
 # Project structure
 
@@ -28,13 +29,23 @@ Contains the main scripts executed by the Nextflow workflow:
 - `01_prepare_expression.py ` — preprocessing of expression data
 - `02_prepare_metadata.py` — preprocessing of clinical data
 - `03_vst_pca.py` — normalization and PCA plots
-- `04_de.py` — differential expression analysis
+- `04_de.py` — differential expression analysis between groups of clinical factors
 - `05_volcano_plot.py` — creation of Volcano plots
 - `06_ranked_GSEA.py` — preparation of gene panels and running ranked GSEA
 - `07_ssgsea.py` — running ssGSEA
 - `08_ssgsea_statistics.py` — Statistical analysis of ssGSEA score
 - `09_visualization_GSEA.py` — heatmaps, dotplots of ranked GSEA, ssGSEA results
 - `10_dynamics.py` — Interaction and delta analysis
+- `11_global_gsea.py` — running ranked GSEA using GO db
+- `12_timepoints_analysis.py` — differential expression analysis between timepoints, ranked GSEA GO
+
+### `independent_cohorts/`
+
+Contains independent scripts for checking CAR-T product DEGs of our cohort and predefined signatures in three independent cohorts
+
+- `GSE151511_analysis.py`
+- `GSE197628_analysis.py`
+- `GSE223655_analysis.py`
 
 # INPUT
 
@@ -151,7 +162,7 @@ statistical significance
 significantly upregulated genes
 significantly downregulated genes
 
-# 06. Ranked GSEA
+# 06. Ranked GSEA - gene panels
 
 Script:
 
@@ -243,6 +254,70 @@ Changes relative to the CAR-T product baseline are calculated:
 
 The delta values are then compared between clinical groups.
 
+# 11. Ranked GSEA - GO database
+
+Script:
+
+bin/11_global_gsea.py
+
+Ranked gene lists generated from differential expression analysis are used for GSEA.
+
+The analysis is performed using GO database.
+
+This allows pathway/signature enrichment to be assessed using the complete ranked gene list rather than only significantly differentially expressed genes.
+
+
+# 12. Timepoint analysis
+
+Script:
+
+bin/12_timepoints_analysis.py
+
+Unsupervised clustering by variable genes across timepoints.
+Differential expression analysis d28 vs product, d7 vs product.
+Visualization via heatmaps.
+Ranked gene lists generated from differential expression analysis are used for GSEA using GO database.
+
+# 13. Signature search
+
+Script:
+
+bin/13_signature.py
+
+Create DEGs product-response-assosiated signature
+Logistic univariate and multivariable regression - effect of clinical factors on "signature"
+Search signature via Elastic Net
+
+# 14. Signature statistics
+
+Script:
+
+bin/14_signature_statistics.py
+
+Logistic univariate and multivariable regression of significant signatures by ssGSEA (responders vs nonresponders) - effect of clinical factors
+
+## Separate scripts
+
+
+# GSE151511_analysis
+# GSE197628_analysis
+
+Scripts:
+
+independent_cohorts/GSE151511_analysis.py
+independent_cohorts/GSE197628_analysis.py
+
+Preprocessing of scRNA-seq data, filtering, calculating signature score, test, ROC_AOC, pseudobulk, differential expression analysis, ranked GSEA using predefined panels, visualization
+
+# GSE223655_analysis
+
+Script:
+
+independent_cohorts/GSE223655_analysis.py
+
+Preprocessing of data, filtering, calculating signature score, test, ROC_AOC, differential expression analysis, ssGSEA, ranked GSEA using predefined panels, visualization
+
+
 # Reproducibility
 
 The analysis is implemented in Nextflow DSL2.
@@ -306,11 +381,18 @@ Directory	Content
 03_vst_pca/	VST expression and PCA
 04_de/	DESeq2 results
 05_volcano_plot/	Volcano plots
-06_ranked_gsea/	Ranked GSEA results
+06_ranked_gsea/	Ranked GSEA results, predefined gene panels
 07_ssgsea/	ssGSEA scores
 08_ssgsea_statistics/	Statistical analysis of ssGSEA
 09_visualization_GSEA/	Integrated GSEA visualizations
 10_dynamics/	Longitudinal signature analysis
+11_global_gsea.pys/	Ranked GSEA results, GO db
+12_timepoints_analysis.py/ Visualization across timepoints, DEGs results, ranked GSEA results
+13_signature.py/ Signatures: DEGs, searched by elastic net, model parametrs and perfomance
+14_signature_statistics.py/ results of logistic univariate and multivariable regression
+GSE151511/ signature score, heatmap of signature genes, statistic results, ROC curve, GSEA results
+GSE197628/ signature score, heatmap of signature genes, statistic results, ROC curve, GSEA results
+GSE223655/ signature score, heatmap of signature genes, statistic results, ROC curve, GSEA results
 
 # Software
 
