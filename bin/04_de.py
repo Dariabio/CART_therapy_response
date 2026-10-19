@@ -133,9 +133,8 @@ for tp_name, tp_value in TIMEPOINTS.items():
     ].copy()
 
 
-    # --------------------------------------------------------
     # Match samples
-    # --------------------------------------------------------
+    
 
     common_samples = [
         sample
@@ -153,9 +152,9 @@ for tp_name, tp_value in TIMEPOINTS.items():
     ].copy()
 
 
-    # --------------------------------------------------------
+    
     # Check
-    # --------------------------------------------------------
+   
 
     print("\nGroups:")
 
@@ -176,9 +175,9 @@ for tp_name, tp_value in TIMEPOINTS.items():
     )
 
 
-    # --------------------------------------------------------
+    
     # Check both groups
-    # --------------------------------------------------------
+   
 
     if positive not in meta_tp[
         comparison_column
@@ -204,18 +203,17 @@ for tp_name, tp_value in TIMEPOINTS.items():
         continue
 
 
-    # --------------------------------------------------------
     # Make sure order is identical
-    # --------------------------------------------------------
+    
 
     assert list(meta_tp.index) == list(
         counts_tp.index
     )
 
 
-    # --------------------------------------------------------
+   
     # Remove genes with zero counts
-    # --------------------------------------------------------
+    
 
     keep_genes = (
         counts_tp.sum(axis=0) > 0
@@ -226,16 +224,9 @@ for tp_name, tp_value in TIMEPOINTS.items():
         keep_genes.values
     ]
 
-
-    print(
-        "Genes after filtering:",
-        counts_tp.shape[1]
-    )
-
-
-    # --------------------------------------------------------
+    
     # Metadata factor
-    # --------------------------------------------------------
+
 
     meta_tp[comparison_column] = (
         meta_tp[comparison_column]
@@ -249,26 +240,15 @@ for tp_name, tp_value in TIMEPOINTS.items():
     )
 
 
-    # --------------------------------------------------------
+    
     # Design
-    # --------------------------------------------------------
+   
 
     design_formula = (
         f"~ batch_nexp + {comparison_column}"
     )
 
-    print(
-        "Design:",
-        design_formula
-    )
-
-
-    # --------------------------------------------------------
     # DESeq2
-    # --------------------------------------------------------
-
-    print("\nRunning DESeq2...")
-
 
     dds = DeseqDataSet(
         counts=counts_tp,
@@ -278,16 +258,7 @@ for tp_name, tp_value in TIMEPOINTS.items():
 
     dds.deseq2()
 
-
-    # --------------------------------------------------------
     # Contrast
-    # --------------------------------------------------------
-
-    print(
-        f"Contrast: "
-        f"{positive} vs {negative}"
-    )
-
 
     ds = DeseqStats(
         dds,
@@ -303,10 +274,7 @@ for tp_name, tp_value in TIMEPOINTS.items():
 
     results = ds.results_df.copy()
 
-
-    # --------------------------------------------------------
     # Save all results
-    # --------------------------------------------------------
 
     results_file = f"DESeq2_{tp_name}.tsv"
 
@@ -315,9 +283,7 @@ for tp_name, tp_value in TIMEPOINTS.items():
         sep="\t"
     )
 
-    # --------------------------------------------------------
     # DEG filtering
-    # --------------------------------------------------------
 
     deg = results[
         (results["padj"] < 0.05) &
@@ -328,6 +294,7 @@ for tp_name, tp_value in TIMEPOINTS.items():
 
     deg_file = f"DEGs_{tp_name}.tsv"
 
+    # Save DEGs
     deg.to_csv(
         deg_file,
         sep="\t"

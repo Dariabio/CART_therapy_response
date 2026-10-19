@@ -1,21 +1,3 @@
-
-# Longitudinal ssGSEA analysis for multiple comparisons
-#
-# Comparisons:
-#   response
-#   aggressiveness
-#   bone_marrow
-#   lesion
-#
-# For each comparison:
-#   1. Mixed-effects model
-#   2. Interaction analysis
-#   3. Delta analysis
-#   4. Delta effect heatmap
-#   5. Forest plots
-#   6. Trajectory plots
-#   7. Final summary
-
 import os
 import argparse
 import warnings
@@ -195,16 +177,13 @@ print(
 
 
 # SIGNATURES
-# ============================================================
+
 
 signature_cols = list(
     scores.columns
 )
 
-
-# ============================================================
 # PREPARE DATA
-# ============================================================
 
 df = meta[
     [
@@ -282,9 +261,7 @@ print(
 )
 
 
-# ============================================================
 # 11. AGGREGATE DUPLICATE SAMPLES
-# ============================================================
 
 df_patient = (
     df
@@ -310,13 +287,7 @@ print(
 )
 
 
-# ============================================================
 # 12. MIXED-EFFECTS MODEL
-# ============================================================
-
-print("\n==========================================")
-print("MIXED-EFFECTS MODEL")
-print("==========================================\n")
 
 
 model_results = []
@@ -355,14 +326,11 @@ for signature in signature_cols:
         )
 
 
-    # --------------------------------------------------------
+  
     # Mixed model
-    #
     # score ~ timepoint * group
-    #
-    # The interaction tests whether the trajectory over time
-    # differs between the two groups.
-    # --------------------------------------------------------
+    # The interaction tests whether the trajectory over time differs between the two groups.
+
 
     formula = (
         "score ~ "
@@ -422,9 +390,9 @@ for signature in signature_cols:
             continue
 
 
-    # --------------------------------------------------------
+    
     # Save all model terms
-    # --------------------------------------------------------
+   
 
     for term in fit.params.index:
 
@@ -446,9 +414,9 @@ model_results = pd.DataFrame(
 )
 
 
-# ============================================================
+
 # 13. FDR FOR ALL MODEL TERMS
-# ============================================================
+
 
 model_results["p_adj"] = np.nan
 
@@ -485,9 +453,9 @@ model_results.to_csv(
 )
 
 
-# ============================================================
+
 # 14. INTERACTION TERMS
-# ============================================================
+
 
 interaction = model_results[
     model_results["term"]
@@ -550,9 +518,9 @@ print(
 )
 
 
-# ============================================================
+
 # 15. FOREST PLOT
-# ============================================================
+
 
 def forest_plot_mixed_term(
     model_results,
@@ -752,9 +720,9 @@ def forest_plot_mixed_term(
     plt.close()
 
 
-# ------------------------------------------------------------
+
 # Determine exact interaction terms
-# ------------------------------------------------------------
+
 
 interaction_d7_term = (
     "C(timepoint)[T.d7 after]:"
@@ -794,14 +762,8 @@ forest_plot_mixed_term(
 )
 
 
-# ============================================================
+
 # 16. DELTA ANALYSIS
-# ============================================================
-
-print("\n==========================================")
-print("DELTA ANALYSIS")
-print("==========================================\n")
-
 
 delta_results = []
 
@@ -857,9 +819,9 @@ for signature in signature_cols:
     tmp = tmp.reset_index()
 
 
-    # --------------------------------------------------------
+    
     # Compare delta between groups
-    # --------------------------------------------------------
+   
 
     for delta_name in [
         "delta_d7",
@@ -973,9 +935,9 @@ else:
     )
 
 
-# ============================================================
+
 # 17. DELTA EFFECT HEATMAP
-# ============================================================
+
 
 def delta_effect_heatmap(
     delta_results,
@@ -1016,9 +978,9 @@ def delta_effect_heatmap(
     )
 
 
-    # --------------------------------------------------------
+
     # Panel information
-    # --------------------------------------------------------
+
 
     panel_info = pd.DataFrame(
         index=mat.index
@@ -1085,10 +1047,8 @@ def delta_effect_heatmap(
         ordered
     )
 
-
-    # --------------------------------------------------------
     # Plot
-    # --------------------------------------------------------
+
 
     fig, ax = plt.subplots(
         figsize=(
@@ -1301,9 +1261,9 @@ print(
 )
 
 
-# ------------------------------------------------------------
+
 # Plot trajectories
-# ------------------------------------------------------------
+
 
 for signature in (
     interesting_signatures
@@ -1415,18 +1375,11 @@ for signature in (
     plt.close()
 
 
-# ============================================================
+
 # 19. FINAL SUMMARY TABLE
-# ============================================================
 
-print("\n==========================================")
-print("FINAL SUMMARY")
-print("==========================================\n")
-
-
-# ------------------------------------------------------------
 # Interaction d7
-# ------------------------------------------------------------
+
 
 interaction_d7 = interaction[
     interaction["term"]
@@ -1451,9 +1404,9 @@ interaction_d7 = interaction_d7[
 )
 
 
-# ------------------------------------------------------------
+
 # Interaction d28
-# ------------------------------------------------------------
+
 
 interaction_d28 = interaction[
     interaction["term"]
@@ -1478,9 +1431,8 @@ interaction_d28 = interaction_d28[
 )
 
 
-# ------------------------------------------------------------
 # Delta d7
-# ------------------------------------------------------------
+
 
 if not delta_results.empty:
 
@@ -1528,9 +1480,7 @@ else:
     )
 
 
-# ------------------------------------------------------------
 # Delta d28
-# ------------------------------------------------------------
 
 if not delta_results.empty:
 
@@ -1578,9 +1528,7 @@ else:
     )
 
 
-# ------------------------------------------------------------
 # Merge
-# ------------------------------------------------------------
 
 final_summary = (
     interaction_d7
@@ -1601,10 +1549,8 @@ final_summary = (
     )
 )
 
-
-# ------------------------------------------------------------
 # Best FDR
-# ------------------------------------------------------------
+
 
 fdr_cols = [
     "FDR_interaction_d7",
@@ -1631,9 +1577,7 @@ final_summary = (
 )
 
 
-# ------------------------------------------------------------
 # Significance flags
-# ------------------------------------------------------------
 
 final_summary[
     "significant_d7"
@@ -1669,9 +1613,7 @@ final_summary[
 )
 
 
-# ------------------------------------------------------------
 # Save
-# ------------------------------------------------------------
 
 final_summary.to_csv(
     os.path.join(
@@ -1683,9 +1625,9 @@ final_summary.to_csv(
 )
 
 
-# ============================================================
+
 # 20. INTERPRETATION
-# ============================================================
+
 
 def classify_signal(row):
 

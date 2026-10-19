@@ -209,14 +209,14 @@ def unsup_cluster(n=50, labelsize=10):
     handles=timepoint_handles,
     title="Timepoint",
     bbox_to_anchor=(1.1, 1.0),
-    bbox_transform=g.ax_heatmap.transAxes, # Используем оси heatmap!
+    bbox_transform=g.ax_heatmap.transAxes, # use 0x/oy heatmap!
     **legend_kwargs
 )
 
     g.fig.legend(
     handles=aggressiveness_handles,
     title="Aggressiveness",
-    bbox_to_anchor=(1.1, 0.8), # Смещаем ниже
+    bbox_to_anchor=(1.1, 0.8),
     bbox_transform=g.ax_heatmap.transAxes,
     **legend_kwargs
 )
@@ -224,7 +224,7 @@ def unsup_cluster(n=50, labelsize=10):
     g.fig.legend(
     handles=bone_marrow_handles,
     title="Bone marrow",
-    bbox_to_anchor=(1.1, 0.6), # Смещаем ниже
+    bbox_to_anchor=(1.1, 0.6),
     bbox_transform=g.ax_heatmap.transAxes,
     **legend_kwargs
 )
@@ -232,7 +232,7 @@ def unsup_cluster(n=50, labelsize=10):
     g.fig.legend(
     handles=lesion_handles,
     title="Lesion",
-    bbox_to_anchor=(1.1, 0.4), # Смещаем ниже
+    bbox_to_anchor=(1.1, 0.4),
     bbox_transform=g.ax_heatmap.transAxes,
     **legend_kwargs
 )
@@ -240,7 +240,7 @@ def unsup_cluster(n=50, labelsize=10):
     g.fig.legend(
     handles=response_handles,
     title="Response",
-    bbox_to_anchor=(1.1, 0.2), # Смещаем ниже
+    bbox_to_anchor=(1.1, 0.2),
     bbox_transform=g.ax_heatmap.transAxes,
     **legend_kwargs
     )
@@ -291,7 +291,7 @@ available_genes = [g for g in target_genes if g in vst_df.columns]
 
 X_supervised = vst_df[available_genes].copy()
 
-# StandardScaler сдвинет среднее в 0 и приведет дисперсию к 1.
+# StandardScaler: mean 0 and diseprsion 1.
 scaler = StandardScaler()
 
 X_scaled = scaler.fit_transform(
@@ -304,7 +304,7 @@ X_scaled = pd.DataFrame(
     columns=X_supervised.columns
 )
 
-# 5. Кластеризация и валидация (Силуэтный анализ)
+# 5. Clusterization and validation
 
 best_n_clusters = 2
 best_score = -1
@@ -340,7 +340,6 @@ for n in range(2, 6):
     clusterer = AgglomerativeClustering(n_clusters=n, linkage='ward')
     labels = clusterer.fit_predict(X_scaled)
     score = silhouette_score(X_scaled, labels)
-    print(f"Количество кластеров: {n} | Силуэтный коэффициент: {score:.3f}")
     if score > best_score:
         best_score = score
         best_n_clusters = n
@@ -348,7 +347,7 @@ for n in range(2, 6):
 
 
 # Cluster labels
-# ------------------------------------------------------------
+
 
 cluster_labels = pd.Series(
     best_labels,
@@ -361,10 +360,8 @@ print(
     cluster_labels.value_counts()
     .sort_index()
 )
-
-# ------------------------------------------------------------
 # Order samples by cluster
-# ------------------------------------------------------------
+
 
 sample_order = (
     cluster_labels
@@ -377,7 +374,7 @@ X_supervised_ordered = X_supervised.loc[
 ]
  
 # Cluster colors
-# ------------------------------------------------------------
+
 
 cluster_palette = sns.color_palette(
     "Set2",
@@ -536,14 +533,14 @@ g.fig.legend(
     handles=timepoint_handles,
     title="Timepoint",
     bbox_to_anchor=(1.1, 1.0),
-    bbox_transform=g.ax_heatmap.transAxes, # Используем оси heatmap!
+    bbox_transform=g.ax_heatmap.transAxes, 
     **legend_kwargs
 )
 
 g.fig.legend(
     handles=aggressiveness_handles,
     title="Aggressiveness",
-    bbox_to_anchor=(1.1, 0.8), # Смещаем ниже
+    bbox_to_anchor=(1.1, 0.8), 
     bbox_transform=g.ax_heatmap.transAxes,
     **legend_kwargs
 )
@@ -551,7 +548,7 @@ g.fig.legend(
 g.fig.legend(
     handles=bone_marrow_handles,
     title="Bone marrow",
-    bbox_to_anchor=(1.1, 0.6), # Смещаем ниже
+    bbox_to_anchor=(1.1, 0.6), 
     bbox_transform=g.ax_heatmap.transAxes,
     **legend_kwargs
 )
@@ -559,7 +556,7 @@ g.fig.legend(
 g.fig.legend(
     handles=lesion_handles,
     title="Lesion",
-    bbox_to_anchor=(1.1, 0.4), # Смещаем ниже
+    bbox_to_anchor=(1.1, 0.4), 
     bbox_transform=g.ax_heatmap.transAxes,
     **legend_kwargs
 )
@@ -567,7 +564,7 @@ g.fig.legend(
 g.fig.legend(
     handles=response_handles,
     title="Response",
-    bbox_to_anchor=(1.1, 0.2), # Смещаем ниже
+    bbox_to_anchor=(1.1, 0.2), 
     bbox_transform=g.ax_heatmap.transAxes,
     **legend_kwargs
     )
@@ -793,14 +790,14 @@ else:
     handles=timepoint_handles,
     title="Timepoint",
     bbox_to_anchor=(1.1, 0.95),
-    bbox_transform=g_deg.ax_heatmap.transAxes, # Используем оси heatmap!
+    bbox_transform=g_deg.ax_heatmap.transAxes,
     **legend_kwargs
 )
 
     g_deg.fig.legend(
     handles=aggressiveness_handles,
     title="Aggressiveness",
-    bbox_to_anchor=(1.1, 0.85), # Смещаем ниже
+    bbox_to_anchor=(1.1, 0.85), 
     bbox_transform=g_deg.ax_heatmap.transAxes,
     **legend_kwargs
 )
@@ -808,7 +805,7 @@ else:
     g_deg.fig.legend(
     handles=bone_marrow_handles,
     title="Bone marrow",
-    bbox_to_anchor=(1.1, 0.75), # Смещаем ниже
+    bbox_to_anchor=(1.1, 0.75), 
     bbox_transform=g_deg.ax_heatmap.transAxes,
     **legend_kwargs
 )
@@ -816,14 +813,14 @@ else:
     g_deg.fig.legend(
     handles=lesion_handles,
     title="Lesion",
-    bbox_to_anchor=(1.1, 0.65), # Смещаем ниже
+    bbox_to_anchor=(1.1, 0.65), 
     bbox_transform=g_deg.ax_heatmap.transAxes,
     **legend_kwargs
 )
     g_deg.fig.legend(
     handles=response_handles,
     title="Response",
-    bbox_to_anchor=(1.1, 0.55), # Смещаем ниже
+    bbox_to_anchor=(1.1, 0.55), 
     bbox_transform=g_deg.ax_heatmap.transAxes,
     **legend_kwargs
     )
@@ -877,11 +874,10 @@ for comp_id, info in comparisons.items():
         subset=["padj", "log2FoldChange"]
     )
 
-    # --------------------------------------------------------
+  
     # Select top 20 genes
     # Here genes are ranked by absolute log2FC
-    # --------------------------------------------------------
-
+  
     top_genes = (
         deg
         .sort_values(
@@ -911,9 +907,9 @@ for comp_id, info in comparisons.items():
         )
         continue
 
-    # --------------------------------------------------------
+    
     # Select samples for this comparison
-    # --------------------------------------------------------
+ 
 
     if tp_name == "d7_after_vs_product":
 
@@ -959,9 +955,9 @@ for comp_id, info in comparisons.items():
         .index
     )
 
-    # --------------------------------------------------------
+ 
     # Prepare heatmap matrix
-    # --------------------------------------------------------
+
 
     heatmap_data = (
         vst_df
@@ -993,9 +989,9 @@ for comp_id, info in comparisons.items():
 
     heatmap_data.index = gene_labels
 
-    # --------------------------------------------------------
+  
     # Column colors
-    # --------------------------------------------------------
+    
 
     col_colors = (
         meta_heatmap
@@ -1060,9 +1056,9 @@ for comp_id, info in comparisons.items():
         )
         continue
 
-    # --------------------------------------------------------
+   
     # Explicit z-score by gene
-    # --------------------------------------------------------
+    
 
     heatmap_z = heatmap_data.sub(
         heatmap_data.mean(axis=1),
@@ -1123,9 +1119,9 @@ for comp_id, info in comparisons.items():
         fontsize=14
     )
 
-    # --------------------------------------------------------
+
     # Save
-    # --------------------------------------------------------
+    
 
     heatmap_save_path = os.path.join(
         args.figures,
@@ -1147,7 +1143,7 @@ for comp_id, info in comparisons.items():
 
 
 
-'''
+
 # 5. GSEA FOR TIMEPOINT COMPARISONS
 
 
@@ -1264,9 +1260,9 @@ for tp_name in gsea_timepoints:
         continue
 
 
-    # --------------------------------------------------------
+
     # Output directory for this comparison
-    # --------------------------------------------------------
+
 
     outdir = os.path.join(
         gsea_root,
@@ -1279,9 +1275,9 @@ for tp_name in gsea_timepoints:
     )
 
 
-    # --------------------------------------------------------
+   
     # Run GSEA
-    # --------------------------------------------------------
+   
 
     try:
 
@@ -1305,9 +1301,9 @@ for tp_name in gsea_timepoints:
         continue
 
 
-    # --------------------------------------------------------
+
     # Save all GSEA results
-    # --------------------------------------------------------
+   
 
     all_results = pr.res2d.copy()
 
@@ -1328,9 +1324,8 @@ for tp_name in gsea_timepoints:
     )
 
 
-    # --------------------------------------------------------
     # Check required columns
-    # --------------------------------------------------------
+    
 
     required_columns = [
         "Term",
@@ -1358,9 +1353,9 @@ for tp_name in gsea_timepoints:
         continue
 
 
-    # --------------------------------------------------------
+    
     # Prepare results for plotting
-    # --------------------------------------------------------
+ 
 
     plot_df = all_results[
         [
@@ -1390,9 +1385,9 @@ for tp_name in gsea_timepoints:
     )
 
 
-    # --------------------------------------------------------
+
+    
     # Significant pathways
-    # --------------------------------------------------------
 
     significant = plot_df[
         plot_df["FDR q-val"] < 0.05
@@ -1611,9 +1606,3 @@ for tp_name in gsea_timepoints:
 
         plt.close()
 
-
-        print(
-            f"Negative GSEA plot saved: "
-            f"{negative_file}"
-        )
-'''

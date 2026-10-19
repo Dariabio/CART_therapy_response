@@ -98,9 +98,6 @@ scores = pd.read_csv(
     index_col=0
 )
 
-print("\nLoaded data:")
-print("Metadata:", meta.shape)
-print("ssGSEA:", scores.shape)
 
 # MATCH SAMPLES
 

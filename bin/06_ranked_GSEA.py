@@ -6,6 +6,7 @@ import gseapy as gp
 
 parser = argparse.ArgumentParser()
 
+#Arguments
 parser.add_argument(
     "--comparison",
     required=True
@@ -70,40 +71,8 @@ for col in gp1.columns:
         f"P1_{col}"
     ] = genes
 
-'''
+
 # Panel 2
-
-gp2 = pd.read_csv(
-    os.path.join(
-    args.panel_dir,
-    "gene_panel_2.csv"
-)
-    )
-
-gp2["subpop"] = (
-    gp2["Stage"].astype(str)
-    + "_"
-    + gp2["Annotation"].astype(str)
-)
-
-for name, group in gp2.groupby(
-    "subpop"
-):
-
-    genes = (
-        group["Gene"]
-        .dropna()
-        .astype(str)
-        .str.strip()
-        .tolist()
-    )
-
-    panels[
-        f"P2_{name}"
-    ] = genes
-'''
-
-# Panel 5
 gp2 = pd.read_csv(
     os.path.join(
     args.panel_dir,
@@ -130,7 +99,6 @@ for col in gp2.columns:
         f"P2_{col}"
     ] = genes
 
-# Panel_2 preprossesing
 
 # Panel 3
 
@@ -178,9 +146,6 @@ for col in gp4.columns:
     panels[
         f"P4_{col}"
     ] = genes
-
-
-
 
 # 2. Run GSEA
 
@@ -257,10 +222,3 @@ for short_name in [
         max_size=500,
         seed=42
     )
-
-
-print(
-    f"Panel GSEA completed: {comparison}"
-)
-
-

@@ -5,6 +5,7 @@ import gseapy as gp
 
 parser = argparse.ArgumentParser()
 
+#Arguments
 parser.add_argument(
     "--expression",
     required=True
@@ -62,41 +63,9 @@ for col in gp1.columns:
         f"P1_{col}"
     ] = genes
 
-'''
+
+
 # Panel 2
-
-gp2 = pd.read_csv(
-    os.path.join(
-    args.panel_dir,
-    "gene_panel_2.csv"
-)
-    )
-
-gp2["subpop"] = (
-    gp2["Stage"].astype(str)
-    + "_"
-    + gp2["Annotation"].astype(str)
-)
-
-for name, group in gp2.groupby(
-    "subpop"
-):
-
-    genes = (
-        group["Gene"]
-        .dropna()
-        .astype(str)
-        .str.strip()
-        .tolist()
-    )
-
-    panels[
-        f"P2_{name}"
-    ] = genes
-'''
-
-
-# Panel 5
 gp2 = pd.read_csv(
     os.path.join(
     args.panel_dir,
@@ -198,5 +167,3 @@ scores_all = scores_raw.pivot_table(
 )
 
 scores_all.to_csv(os.path.join(args.output_dir, "scores_all.csv"))
-
-print("ssGSEA completed")

@@ -6,6 +6,7 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import statsmodels.api as sm
+from statsmodels.stats.multitest import multipletests
 
 from matplotlib.patches import Patch
 
@@ -17,11 +18,15 @@ from sklearn.model_selection import (
     StratifiedKFold,
     LeaveOneOut
 )
+
 from sklearn.metrics import (
     roc_auc_score,
+    roc_curve,
     accuracy_score,
     balanced_accuracy_score
 )
+
+
 
 
 # ARGUMENTS
@@ -67,10 +72,7 @@ top_n = 50
 # in EACH signature direction
 MIN_SIGNATURE_GENES = 5
 
-
-# ============================================================
 # DIRECTORIES
-# ============================================================
 
 os.makedirs(
     args.output_dir,
@@ -82,10 +84,8 @@ os.makedirs(
     exist_ok=True
 )
 
-
-# ============================================================
 # 1. LOAD DATA
-# ============================================================
+
 
 vst = pd.read_csv(
     args.expr_all_vst,
@@ -108,9 +108,7 @@ de = pd.read_csv(
 )
 
 
-# ============================================================
 # 2. CHECK VST / METADATA SAMPLE IDs
-# ============================================================
 
 common_all_samples = meta.index.intersection(
     vst.index
@@ -130,9 +128,8 @@ print(
 )
 
 
-# ============================================================
 # 3. FILTER PRODUCT SAMPLES
-# ============================================================
+
 
 meta_product = meta[
     (meta["timepoint"] == "product") &
@@ -184,9 +181,8 @@ print(
 )
 
 
-# ============================================================
 # 4. FILTER DE RESULTS
-# ============================================================
+
 
 required_de_columns = [
     "padj",
@@ -242,9 +238,7 @@ print(
 )
 
 
-# ============================================================
 # 5. MATCH DEG GENES TO VST
-# ============================================================
 
 vst_genes = set(
     vst_product.columns
@@ -303,9 +297,8 @@ print(
 )
 
 
-# ============================================================
 # 6. DEG HEATMAP
-# ============================================================
+
 
 heatmap_data = (
     vst_product[
@@ -315,10 +308,9 @@ heatmap_data = (
 )
 
 
-# ------------------------------------------------------------
 # Sort samples:
 # nonresponder -> responder
-# ------------------------------------------------------------
+
 
 response_order = {
     "nonresponder": 0,
@@ -345,10 +337,8 @@ heatmap_data = heatmap_data[
     sorted_samples
 ]
 
-
-# ------------------------------------------------------------
 # Annotation colours
-# ------------------------------------------------------------
+
 
 response_palette = {
     "nonresponder": "#1F77B4",
@@ -372,10 +362,8 @@ if col_colors.isna().any():
         "when creating heatmap annotation."
     )
 
-
-# ============================================================
 # HEATMAP
-# ============================================================
+
 
 g = sns.clustermap(
     heatmap_data,
@@ -450,10 +438,7 @@ print(
     heatmap_file
 )
 
-
-# ============================================================
 # 7. DEFINE RESPONSE SIGNATURE
-# ============================================================
 
 # log2FC > 1:
 # higher in responders
@@ -498,9 +483,7 @@ top_down = [
 ][:top_n]
 
 
-# ============================================================
-# 8. REQUIRE MINIMUM 5 GENES PER DIRECTION
-# ============================================================
+# 8. REQUIRE MINIMUM 5 GENES
 
 if len(top_up) < MIN_SIGNATURE_GENES:
 
@@ -509,16 +492,6 @@ if len(top_up) < MIN_SIGNATURE_GENES:
         f"{len(top_up)} genes. At least "
         f"{MIN_SIGNATURE_GENES} genes are required."
     )
-
-'''
-if len(top_down) < MIN_SIGNATURE_GENES:
-
-    raise ValueError(
-        f"Nonresponder signature contains only "
-        f"{len(top_down)} genes. At least "
-        f"{MIN_SIGNATURE_GENES} genes are required."
-    )
-'''
 
 
 print(
@@ -532,9 +505,8 @@ print(
 )
 
 
-# ============================================================
 # 9. SAVE SIGNATURE
-# ============================================================
+
 
 signature = pd.DataFrame({
 
@@ -571,9 +543,7 @@ print(
 )
 
 
-# ============================================================
 # 10. PREPARE SIGNATURE GENES
-# ============================================================
 
 responder_genes = (
     signature.loc[
@@ -596,10 +566,8 @@ nonresponder_genes = (
     .tolist()
 )
 
-
-# ============================================================
 # 11. CHECK SIGNATURE GENES IN VST
-# ============================================================
+
 
 responder_genes_present = [
     gene
@@ -636,19 +604,10 @@ if len(responder_genes_present) < MIN_SIGNATURE_GENES:
         "are available in VST."
     )
 
-'''
-if len(nonresponder_genes_present) < MIN_SIGNATURE_GENES:
-
-    raise ValueError(
-        "Fewer than 5 nonresponder signature genes "
-        "are available in VST."
-    )
-'''
 
 
-# ============================================================
 # 12. GENE-WISE Z-SCORE
-# ============================================================
+
 
 def zscore_columns(df):
     """
@@ -671,14 +630,7 @@ def zscore_columns(df):
         df - means
     ) / stds
 
-'''
-score_genes = list(
-    dict.fromkeys(
-        responder_genes_present +
-        nonresponder_genes_present
-    )
-)
-'''
+
 score_genes = list(
     dict.fromkeys(
         responder_genes_present
@@ -700,10 +652,8 @@ expr_signature_z = (
     )
 )
 
-
-# ============================================================
 # 13. CALCULATE SIGNATURE SCORES
-# ============================================================
+
 
 # Responder component:
 # high value = high expression of responder genes
@@ -715,10 +665,8 @@ meta_product["responder_score"] = (
     .mean(axis=1)
 )
 
-
-# ============================================================
 # 14. AGGREGATE TO PATIENT LEVEL
-# ============================================================
+
 
 # Logistic regression should not treat multiple samples
 # from the same patient as independent observations.
@@ -746,9 +694,8 @@ patient_scores = (
 )
 
 
-# ============================================================
 # 15. CHECK PATIENT-LEVEL CLINICAL CONSISTENCY
-# ============================================================
+
 
 clinical_columns = [
     "response",
@@ -781,9 +728,8 @@ for column in clinical_columns:
         )
 
 
-# ============================================================
 # 16. BINARY ENCODING
-# ============================================================
+
 
 patient_scores["response_binary"] = (
     patient_scores["response"]
@@ -821,9 +767,8 @@ patient_scores["lesion_binary"] = (
 )
 
 
-# ============================================================
 # 17. SAVE DATA USED FOR LOGISTIC REGRESSION
-# ============================================================
+
 
 regression_data_file = os.path.join(
     args.output_dir,
@@ -843,9 +788,8 @@ print(
 )
 
 
-# ============================================================
 # 18. LOGISTIC REGRESSION FUNCTION
-# ============================================================
+
 
 def fit_logistic(
     df,
@@ -970,14 +914,7 @@ def fit_logistic(
     )
 
 
-# ============================================================
 # 19. UNIVARIATE LOGISTIC REGRESSION
-# ============================================================
-
-print(
-    "\nRunning univariate logistic regression..."
-)
-
 
 univariate_predictors = [
     "responder_score"
@@ -1040,8 +977,6 @@ valid_p = (
 )
 
 
-from statsmodels.stats.multitest import multipletests
-
 
 if valid_p.sum() > 0:
 
@@ -1085,28 +1020,9 @@ logistic_univariate.to_csv(
 )
 
 
-print(
-    "Univariate logistic regression saved:",
-    univariate_file
-)
-
-# ============================================================
-# ОТЛАДКА: Проверка пропусков перед регрессией
-# ============================================================
 
 
-print(
-    "\n" + "="*60
-)
-
-print(
-    "DIAGNOSTICS: Checking missing values in patient_scores"
-)
-
-print(
-    "="*60
-)
-
+#check NA
 
 check_columns = [
     "response",
@@ -1146,12 +1062,6 @@ for col in check_columns:
         )
 
 
-print(
-    "\n" + "="*60 + "\n"
-)
-
-
-# Проверяем сколько полных случаев для каждой комбинации
 print(
     "Complete cases for different model combinations:\n"
 )
@@ -1196,18 +1106,7 @@ print(
 )
 
 
-print(
-    "\n" + "="*60 + "\n"
-)
-
-# ============================================================
 # 20. MULTIVARIABLE LOGISTIC REGRESSION
-# ============================================================
-
-print(
-    "\nRunning multivariable logistic regression..."
-)
-
 
 clinical_covariates = [
     "aggressiveness_binary",
@@ -1220,10 +1119,8 @@ full_predictors = [
     "responder_score"
 ] + clinical_covariates
 
-
-# ------------------------------------------------------------
 # Check complete cases
-# ------------------------------------------------------------
+
 
 full_model_columns = [
     "response_binary"
@@ -1268,10 +1165,8 @@ if len(full_model_data) > 0:
         .sort_index()
     )
 
-
-# ------------------------------------------------------------
 # Fit full model
-# ------------------------------------------------------------
+
 
 if len(full_model_data) < 5:
 
@@ -1310,10 +1205,8 @@ model_result[
     "model"
 ] = "responder_score_adjusted"
 
-
-# ============================================================
 # MULTIPLE-TESTING CORRECTION
-# ============================================================
+
 
 model_result[
     "padj"
@@ -1325,9 +1218,8 @@ model_result[
 )[1]
 
 
-# ============================================================
 # HUMAN-READABLE LABELS
-# ============================================================
+
 
 def get_predictor_label(
     predictor
@@ -1367,9 +1259,8 @@ model_result[
 )
 
 
-# ============================================================
 # SAVE
-# ============================================================
+
 
 multivariable_file = os.path.join(
     args.output_dir,
@@ -1383,15 +1274,11 @@ model_result.to_csv(
     index=False
 )
 
-
-# ============================================================
 # 21. ELASTIC NET RESPONSE SIGNATURE
 
-# Elastic Net receives gene expression + response
-# and selects genes itself.
+# Elastic Net receives gene expression + response and selects genes itself
 # then evaluate the model using LOOCV.
-# bootstrap is used to evaluate how stable
-# gene selection is
+# bootstrap is used to evaluate how stable gene selection is
 
 # PARAMETERS
 
@@ -1404,14 +1291,10 @@ MAX_CANDIDATE_GENES = 1000
 
 
 # Elastic Net hyperparameters.
-#
 # C:
 # inverse regularization strength.
-#
 # Smaller C = stronger regularization.
-#
 # l1_ratio:
-#
 # 0.0 -> pure L2
 # 1.0 -> pure L1 (LASSO)
 # between -> Elastic Net
@@ -1421,22 +1304,15 @@ C_GRID = [0.01, 0.1, 1.0, 10.0]
 L1_RATIO_GRID = [0.1, 0.5, 0.9, 1.0]
 
 
-# Number of bootstrap iterations.
-#
-# Start with 200 while developing/debugging.
-#
-# For the final analysis you can increase this to
-# 500 or 1000.1
+# Number of bootstrap iterations
 
 N_BOOTSTRAPS = 200
 
 
 RANDOM_STATE = 42
 
-
-# ============================================================
 # 21.2 PREPARE PATIENT-LEVEL PRODUCT DATA
-# ============================================================
+
 
 elastic_meta = meta_product.copy()
 elastic_meta["response_binary"] = (
@@ -1556,13 +1432,10 @@ if len(np.unique(y)) != 2:
     )
 
 # FUNCTION: SELECT HIGH-VARIANCE GENES
-# before Elastic Net we keep the most variable
-# genes.
+# before Elastic Net we keep the most variable genes
 
-# This function is called separately on TRAINING data.
-#
-# Therefore the held-out patient never influences
-# gene filtering
+# This function is called separately on TRAINING data
+# Therefore the held-out patient never influences gene filtering
 
 def select_variable_genes(
     X_train,
@@ -1613,21 +1486,21 @@ def make_elastic_net_search(
     random_state=RANDOM_STATE
 ):
 
-    # --------------------------------------------------------
+    
     # Pipeline
-    # --------------------------------------------------------
-    #
+    
+    
     # StandardScaler:
-    #
+
     # gene expression is standardized within training data.
-    #
+   
     # LogisticRegression:
-    #
+ 
     # Elastic Net regularization.
-    #
+ 
     # The scaler is inside the pipeline so that it is fitted
     # ONLY on the training part of each CV split.
-    #
+
 
     pipeline = Pipeline([
         (
@@ -1659,17 +1532,17 @@ def make_elastic_net_search(
     }
 
     # Inner CV
-    #
+  
     # This CV is used ONLY to select:
     #
     #     C
     #     l1_ratio
-    #
+  
     # It is NOT the final performance estimate.
-    #
+  
     # The outer LOOCV below provides the honest
     # out-of-sample estimate.
-    #
+ 
 
     inner_cv = StratifiedKFold(
         n_splits=5,
@@ -1701,14 +1574,14 @@ def make_elastic_net_search(
 
 # LOOCV
 
-#
+
 # For every patient:
-#
+
 #     25 patients -> training
 #     1 patient    -> test
-#
+
 # Inside the 25 training patients:
-#
+
 #     select variable genes
 #             |
 #             v
@@ -1731,7 +1604,7 @@ def make_elastic_net_search(
 #
 # This is the important part that makes the evaluation
 # genuinely out-of-sample.
-# ============================================================
+
 
 loo = LeaveOneOut()
 
@@ -1755,9 +1628,9 @@ for fold_number, (
     )
 
 
-    # --------------------------------------------------------
+    
     # Split patients
-    # --------------------------------------------------------
+    
 
     X_train_all = (
         X_df.iloc[
@@ -1787,9 +1660,9 @@ for fold_number, (
     )
 
 
-    # --------------------------------------------------------
+   
     # Select variable genes ONLY from training data
-    # --------------------------------------------------------
+  
 
     candidate_genes = (
         select_variable_genes(
@@ -1811,9 +1684,8 @@ for fold_number, (
     )
 
 
-    # --------------------------------------------------------
     # Check that training data contains both classes
-    # --------------------------------------------------------
+   
 
     if len(np.unique(y_train)) < 2:
 
@@ -1823,9 +1695,9 @@ for fold_number, (
         )
 
 
-    # --------------------------------------------------------
+
     # Inner Elastic Net CV
-    # --------------------------------------------------------
+  
 
     search = make_elastic_net_search(
         random_state=(
@@ -1841,9 +1713,8 @@ for fold_number, (
     )
 
 
-    # --------------------------------------------------------
     # Prediction for held-out patient
-    # --------------------------------------------------------
+
 
     test_patient = X_test.index[0]
 
@@ -1913,9 +1784,9 @@ for fold_number, (
     })
 
 
-    # --------------------------------------------------------
+    
     # Save coefficients selected in this fold
-    # --------------------------------------------------------
+   
 
     fold_model = (
         search.best_estimator_
@@ -1962,9 +1833,9 @@ for fold_number, (
         })
 
 
-# ============================================================
+
 # 21.6 SAVE LOOCV RESULTS
-# ============================================================
+
 
 
 loo_predictions_df = pd.DataFrame(
@@ -2015,17 +1886,15 @@ print(
 )
 
 
-# ============================================================
 # 21.7 LOOCV PERFORMANCE
-# ============================================================
-#
+
 # IMPORTANT:
 #
 # These predictions are OUT-OF-SAMPLE predictions.
-#
+
 # Each patient's probability was generated by a model
 # that did not use this patient during training.
-# ============================================================
+
 
 
 if (
@@ -2132,10 +2001,78 @@ loo_metrics.to_csv(
     index=False
 )
 
+# 21.7.1 ROC CURVE — ELASTIC NET LOOCV
 
-# ============================================================
+
+
+# True labels and out-of-fold probabilities
+y_true = loo_predictions_df["true_response"].astype(int)
+y_prob = loo_predictions_df["predicted_probability"].astype(float)
+
+# Calculate ROC curve
+fpr, tpr, thresholds = roc_curve(
+    y_true,
+    y_prob
+)
+
+# Calculate ROC-AUC
+roc_auc = roc_auc_score(
+    y_true,
+    y_prob
+)
+
+# Plot
+fig, ax = plt.subplots(figsize=(6, 6))
+
+ax.plot(
+    fpr,
+    tpr,
+    color="#D62728",
+    linewidth=2,
+    label=f"Elastic Net (LOOCV), AUC = {roc_auc:.3f}"
+)
+
+# Random classifier
+ax.plot(
+    [0, 1],
+    [0, 1],
+    linestyle="--",
+    color="grey",
+    linewidth=1,
+    label="Random classifier (AUC = 0.500)"
+)
+
+ax.set_xlabel("False Positive Rate")
+ax.set_ylabel("True Positive Rate")
+ax.set_title("ROC curve: CAR-T response prediction")
+
+ax.set_xlim(0, 1)
+ax.set_ylim(0, 1.02)
+
+ax.legend(loc="lower right")
+ax.set_aspect("equal", adjustable="box")
+
+fig.tight_layout()
+
+roc_file = os.path.join(
+    args.figures,
+    "elastic_net_LOOCV_ROC.png"
+)
+
+fig.savefig(
+    roc_file,
+    dpi=300,
+    bbox_inches="tight"
+)
+
+plt.close(fig)
+
+print("ROC curve saved:", roc_file)
+print(f"ROC-AUC: {roc_auc:.3f}")
+
+
 # 21.8 GENE SELECTION FREQUENCY DURING LOOCV
-# ============================================================
+
 #
 # This tells us how often each gene was selected among
 # the LOOCV training models.
@@ -2148,7 +2085,7 @@ loo_metrics.to_csv(
 #
 # A gene selected repeatedly is more stable than a gene
 # appearing in only one fold.
-# ============================================================
+
 
 
 if not loo_coefficients_df.empty:
@@ -2214,10 +2151,8 @@ print(
 )
 
 
-# ============================================================
 # 21.9 BOOTSTRAP GENE STABILITY
-# ============================================================
-#
+
 # Bootstrap asks a different question:
 #
 #     "If I repeatedly resample patients,
@@ -2227,20 +2162,11 @@ print(
 # performance.
 #
 # It is a measure of signature stability.
-# ============================================================
 
-
-print(
-    "\n" + "-" * 70
-)
 
 print(
     f"Running bootstrap gene stability "
     f"({N_BOOTSTRAPS} iterations)..."
-)
-
-print(
-    "-" * 70
 )
 
 
@@ -2308,9 +2234,9 @@ for bootstrap_number in range(
     )
 
 
-    # --------------------------------------------------------
+
     # Variable gene filtering
-    # --------------------------------------------------------
+ 
 
     bootstrap_genes = (
         select_variable_genes(
@@ -2326,9 +2252,9 @@ for bootstrap_number in range(
     )
 
 
-    # --------------------------------------------------------
+   
     # Fit Elastic Net with internal CV
-    # --------------------------------------------------------
+    
 
     try:
 
@@ -2436,10 +2362,8 @@ print(
     bootstrap_coefficients_file
 )
 
-
-# ============================================================
 # 21.10 BOOTSTRAP SELECTION FREQUENCY
-# ============================================================
+
 
 
 if not bootstrap_selection_df.empty:
@@ -2544,36 +2468,21 @@ print(
 )
 
 
-# ============================================================
+
 # 21.11 FINAL ELASTIC NET MODEL
-# ============================================================
-#
+
 # Now we use ALL discovery patients.
 #
 # This model is NOT used to estimate performance.
 #
 # It is used to construct the final signature that will
 # subsequently be LOCKED and tested in an independent cohort.
-#
+
 # This distinction is important:
-#
+
 #     LOOCV -> performance estimate
-#
+
 #     final model -> signature construction
-# ============================================================
-
-
-print(
-    "\n" + "-" * 70
-)
-
-print(
-    "Fitting FINAL Elastic Net model..."
-)
-
-print(
-    "-" * 70
-)
 
 
 final_candidate_genes = (
@@ -2653,10 +2562,8 @@ print(
     f"{len(final_coefficients)}"
 )
 
-
-# ============================================================
 # 21.12 FINAL SIGNATURE TABLE
-# ============================================================
+
 #
 # Positive coefficient:
 #
@@ -2668,8 +2575,8 @@ print(
 #
 # IMPORTANT:
 #
-# These are MODEL coefficients, not DESeq2 log2FC values.
-# ============================================================
+# These are MODEL coefficients
+
 
 
 final_signature = pd.DataFrame({
@@ -2777,9 +2684,9 @@ else:
     ] = np.nan
 
 
-# ------------------------------------------------------------
+
 # Save final signature
-# ------------------------------------------------------------
+
 
 
 elastic_net_signature_file = os.path.join(
@@ -2801,9 +2708,8 @@ print(
 )
 
 
-# ============================================================
 # 21.13 SAVE FINAL MODEL PARAMETERS
-# ============================================================
+
 #
 # These parameters are required to apply the signature
 # to an external cohort.
@@ -2813,7 +2719,7 @@ print(
 #     same genes
 #     same scaling parameters
 #     same coefficients
-# ============================================================
+
 
 
 final_scaler = (
@@ -2860,10 +2766,8 @@ print(
     final_model_parameters_file
 )
 
-
-# ============================================================
 # 21.14 FINAL DISCOVERY-COHORT SIGNATURE SCORES
-# ============================================================
+
 #
 # We calculate the model's linear predictor:
 #
@@ -2881,7 +2785,7 @@ print(
 # Negative score -> more nonresponder-like according to model.
 #
 # These scores are NOT used for the LOOCV performance estimate.
-# ============================================================
+
 
 
 final_X = (
@@ -2944,61 +2848,5 @@ print(
     elastic_net_patient_scores_file
 )
 
-
-# ============================================================
-# 21.15 SUMMARY
-# ============================================================
-
-
-print(
-    "\n" + "=" * 70
-)
-
-print(
-    "ELASTIC NET SIGNATURE SUMMARY"
-)
-
-print(
-    "=" * 70
-)
-
-print(
-    f"Discovery patients: "
-    f"{len(X_df)}"
-)
-
-print(
-    f"Candidate genes: "
-    f"{len(final_candidate_genes)}"
-)
-
-print(
-    f"Final selected genes: "
-    f"{len(final_signature)}"
-)
-
-print(
-    f"LOOCV ROC-AUC: "
-    f"{loo_auc:.4f}"
-)
-
-print(
-    f"LOOCV balanced accuracy: "
-    f"{loo_balanced_accuracy:.4f}"
-)
-
-print(
-    f"Bootstrap iterations: "
-    f"{N_BOOTSTRAPS}"
-)
-
-print(
-    f"Successful bootstrap iterations: "
-    f"{n_successful_bootstraps}"
-)
-
-print(
-    "=" * 70
-)
 
 

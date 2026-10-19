@@ -236,10 +236,7 @@ def load_ssgsea_results(
         sep="\t"
     )
 
-
-# ============================================================
 # 5. ssGSEA BOXPLOTS
-# ============================================================
 
 def make_ssgsea_boxplots(
     p_cutoff=0.05
@@ -255,9 +252,7 @@ def make_ssgsea_boxplots(
         exist_ok=True
     )
 
-    # --------------------------------------------------------
     # Load ssGSEA statistics for all three timepoints
-    # --------------------------------------------------------
 
     gsea_results = {}
 
@@ -282,9 +277,9 @@ def make_ssgsea_boxplots(
 
         return
 
-    # --------------------------------------------------------
+   
     # Process EACH timepoint separately
-    # --------------------------------------------------------
+    
 
     plots_log = []
 
@@ -304,9 +299,9 @@ def make_ssgsea_boxplots(
             )
             continue
 
-        # ----------------------------------------------------
+
         # Significant signatures at this timepoint
-        # ----------------------------------------------------
+ 
 
         current_res = current_res.copy()
 
@@ -350,9 +345,9 @@ def make_ssgsea_boxplots(
 
             continue
 
-        # ----------------------------------------------------
+
         # Metadata and scores for this timepoint
-        # ----------------------------------------------------
+       
 
         meta_tp = meta_by_tp.get(
             short_name
@@ -372,9 +367,9 @@ def make_ssgsea_boxplots(
             )
             continue
 
-        # ----------------------------------------------------
+        
         # Plot EVERY significant signature
-        # ----------------------------------------------------
+        
 
         for _, sig_stats in significant.iterrows():
 
@@ -390,9 +385,9 @@ def make_ssgsea_boxplots(
                 sig_stats["FDR"]
             )
 
-            # ------------------------------------------------
+   
             # Check signature exists in score matrix
-            # ------------------------------------------------
+          
 
             if signature not in scores_tp.columns:
 
@@ -403,9 +398,9 @@ def make_ssgsea_boxplots(
 
                 continue
 
-            # ------------------------------------------------
+           
             # Prepare plotting dataframe
-            # ------------------------------------------------
+          
 
             plot_df = pd.DataFrame(
                 {
@@ -449,10 +444,9 @@ def make_ssgsea_boxplots(
 
                 continue
 
-            # ------------------------------------------------
+           
             # Boxplot
-            # ------------------------------------------------
-
+            
             plt.figure(
                 figsize=(5, 4)
             )
@@ -479,9 +473,9 @@ def make_ssgsea_boxplots(
                 jitter=0.2
             )
 
-            # ------------------------------------------------
+            
             # Title
-            # ------------------------------------------------
+           
 
             plt.title(
                 f"{signature}\n"
@@ -500,9 +494,9 @@ def make_ssgsea_boxplots(
 
             plt.tight_layout()
 
-            # ------------------------------------------------
+           
             # Save
-            # ------------------------------------------------
+            
 
             filename = (
                 f"Boxplot_"
@@ -546,9 +540,9 @@ def make_ssgsea_boxplots(
                 f"Saved: {output_file}"
             )
 
-    # --------------------------------------------------------
+    
     # Save log of all generated plots
-    # --------------------------------------------------------
+    
 
     if plots_log:
 
@@ -580,15 +574,15 @@ def make_ssgsea_boxplots(
         )
 
 
-# ============================================================
+
 # RUN ssGSEA BOXPLOTS
-# ============================================================
+
 
 make_ssgsea_boxplots(
     p_cutoff=0.05
 )
 
-# ============================================================
+
 # 6. LOAD RANKED GSEA RESULTS
 
 def load_ranked_gsea_results(comparison):
@@ -643,7 +637,7 @@ def load_ranked_gsea_results(comparison):
 
             continue
 
-        # Проверяем необходимые колонки
+       
 
         required_columns = [
             "Term",
@@ -673,7 +667,7 @@ def load_ranked_gsea_results(comparison):
 
             continue
 
-        # Оставляем только нужные колонки
+        
 
         df = df[
             [
@@ -683,7 +677,7 @@ def load_ranked_gsea_results(comparison):
             ]
         ].copy()
 
-        # Приводим числовые колонки к numeric
+        
 
         df["NES"] = pd.to_numeric(
             df["NES"],
@@ -695,7 +689,7 @@ def load_ranked_gsea_results(comparison):
             errors="coerce"
         )
 
-        # Убираем строки без NES
+        
 
         df = df.dropna(
             subset=["NES"]
@@ -714,9 +708,9 @@ def load_ranked_gsea_results(comparison):
 ranked_gsea_results = load_ranked_gsea_results(comparison)
 
 
-# ============================================================
+
 # 7. COMMON RANKED GSEA NES HEATMAP
-# ============================================================
+
 
 def ranked_gsea_heatmap(
     gsea_results
@@ -731,9 +725,9 @@ def ranked_gsea_heatmap(
 
         return
 
-    # --------------------------------------------------------
+    
     # Extract NES and FDR
-    # --------------------------------------------------------
+    
 
     nes_list = []
     fdr_list = []
@@ -798,9 +792,9 @@ def ranked_gsea_heatmap(
 
         return
 
-    # --------------------------------------------------------
+   
     # Combine
-    # --------------------------------------------------------
+
 
     nes_mat = pd.concat(
         nes_list,
@@ -813,42 +807,42 @@ def ranked_gsea_heatmap(
     )
 
 
-    # --------------------------------------------------------
+
 # Signature order for heatmap
-# --------------------------------------------------------
+
 
     signature_order = [
-
     # Naive / memory
-    "Naive_Like",
-    "T_EarlyMem",
-    "Central_Memory",
-    "T_NonExhausted",
+        "P1_Naive_Like",
+        "P3_T_EarlyMem",
+        "P1_Central_Memory",
+        "P3_T_NonExhausted",
+    
+        # Effector-memory
+        "P1_Effector_Memory",
+        "P1_Tissue_resident_memory",
+    
+        # Effector
+        "P1_Effector",
+        "P1_Cytotoxic",
+    
+        # Activation / functional states
+        "P4_BTM_T cell_activation",
+        "P1_Th1",
+        "P1_TfH",
+        "P1_Treg",
+    
+        # Exhaustion trajectory
+        "P1_Pre_Exhausted",
+        "P2_TPEX_up",
+        "P2_TEX_int_up",
+        "P2_TEX_term_up",
+        "P4_Exhaustion_Wherry",
+        "P4_Exhaustion_Long",
+        "P1_Exhausted_T",
+        "P3_Exhausted_T"
+    ]
 
-    # Effector-memory
-    "Effector_Memory",
-    "CD8_TEM_circulating",
-    "Tissue_resident_memory",
-
-    # Effector
-    "Effector",
-    "Cytotoxic",
-
-    # Activation / functional states
-    "BTM_T cell_activation",
-    "Th1",
-    "TfH",
-    "Treg",
-
-    # Exhaustion trajectory
-    "Pre_Exhausted",
-    "TPEX_up",
-    "TEX_int_up",
-    "TEX_term_up",
-    "Exhaustion_Wherry",
-    "Exhaustion_Long",
-    "Exhausted_T"
-]
 
 
 
@@ -883,11 +877,9 @@ def ranked_gsea_heatmap(
 )
     '''
 
-
-# --------------------------------------------------------
 # Keep only signatures that exist in GSEA results
 # and follow custom biological order
-# --------------------------------------------------------
+
 
     available_signatures = [
     term
@@ -896,10 +888,8 @@ def ranked_gsea_heatmap(
 ]
 
 
-
-# --------------------------------------------------------
 # Reorder NES and FDR matrices
-# --------------------------------------------------------
+
 
     nes_mat = nes_mat.loc[
     available_signatures
@@ -908,9 +898,9 @@ def ranked_gsea_heatmap(
     fdr_mat = fdr_mat.loc[
     available_signatures
 ]
-    # --------------------------------------------------------
+    
     # Significance markers
-    # --------------------------------------------------------
+    
 
     significance = fdr_mat.apply(
         lambda col: col.map(
@@ -923,9 +913,9 @@ def ranked_gsea_heatmap(
         )
     )
 
-    # --------------------------------------------------------
+    
     # Heatmap
-    # --------------------------------------------------------
+    
 
     g = sns.clustermap(
         nes_mat,
@@ -955,9 +945,9 @@ def ranked_gsea_heatmap(
         }
     )
 
-    # --------------------------------------------------------
+    
     # Labels
-    # --------------------------------------------------------
+   
 
     g.ax_heatmap.set_xlabel(
         "Timepoint"
@@ -993,9 +983,9 @@ def ranked_gsea_heatmap(
 
    
 
-    # --------------------------------------------------------
+    
     # Save
-    # --------------------------------------------------------
+    
 
     output_file = os.path.join(
         args.output_dir,

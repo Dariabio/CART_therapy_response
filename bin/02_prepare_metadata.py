@@ -130,6 +130,7 @@ counts = counts.reindex(common)
 meta = meta.reindex(common)
 assert list(counts.index) == list(meta.index), "Indices don't match"
 
+#save matched counts and metadata
 counts.to_csv(
     os.path.join(
         args.output_dir,

@@ -214,6 +214,7 @@ mat_vst_d7 = mat_vst.loc[meta_d7.index]
 meta_d28 = meta[meta["timepoint"] == "d28 after"]
 mat_vst_d28 = mat_vst.loc[meta_d28.index]
 
+# Function PCA per timepoint
 def make_pca_timepoint(info, mat_exp, hue, title, filename):
     info_df = info.copy()
     mat_exp_df  = mat_exp.copy()

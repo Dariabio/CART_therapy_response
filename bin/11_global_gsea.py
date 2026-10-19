@@ -9,6 +9,7 @@ import seaborn as sns
 
 parser = argparse.ArgumentParser(description="ranked GSEA, GO/KEGG")
 
+#Arguments
 parser.add_argument(
     "--comparison",
     required=True

@@ -12,9 +12,9 @@ from scipy.stats import pearsonr
 from statsmodels.stats.multitest import multipletests
 
 
-# ============================================================
+
 # ARGUMENTS
-# ============================================================
+
 
 parser = argparse.ArgumentParser(
     description=(
@@ -60,22 +60,15 @@ parser.add_argument(
 
 args = parser.parse_args()
 
-
-# ============================================================
 # DIRECTORIES
-# ============================================================
+
 
 os.makedirs(
     args.output_dir,
     exist_ok=True
 )
 
-
-# ============================================================
 # 1. LOAD DATA
-# ============================================================
-
-print("\nLoading metadata...")
 
 meta = pd.read_csv(
     args.metadata,
@@ -83,37 +76,17 @@ meta = pd.read_csv(
     index_col=0
 )
 
-print(
-    f"Metadata shape: {meta.shape}"
-)
-
-
-print("\nLoading ssGSEA scores...")
-
 scores = pd.read_csv(
     args.scores_all,
     index_col=0
 )
 
-print(
-    f"ssGSEA score matrix: {scores.shape}"
-)
-
-
-print("\nLoading GSEA response results...")
-
 gsea_response = pd.read_csv(
     args.ssgsea_stat_result, sep='\t'
 )
 
-print(
-    f"GSEA response table: {gsea_response.shape}"
-)
 
-
-# ============================================================
 # 2. CHECK REQUIRED COLUMNS
-# ============================================================
 
 required_meta_columns = [
     "patient_id",
@@ -161,9 +134,8 @@ if missing_gsea_columns:
     )
 
 
-# ============================================================
 # 3. KEEP PRODUCT SAMPLES
-# ============================================================
+
 
 meta_product = meta.loc[
     (
@@ -196,9 +168,9 @@ print(
 )
 
 
-# ============================================================
+
 # 4. MATCH SAMPLE IDs
-# ============================================================
+
 
 common_samples = (
     meta_product.index
@@ -232,9 +204,9 @@ print(
 )
 
 
-# ============================================================
+
 # 5. RESPONSE ENCODING
-# ============================================================
+
 
 meta_product["response_binary"] = (
     meta_product["response"]
@@ -245,9 +217,9 @@ meta_product["response_binary"] = (
 )
 
 
-# ============================================================
+
 # 6. PATIENT-LEVEL DATA
-# ============================================================
+
 
 print(
     "\nAggregating ssGSEA scores to patient level..."
@@ -305,9 +277,9 @@ if len(common_patients) < 10:
     )
 
 
-# ============================================================
+
 # 7. PATIENT-LEVEL RESPONSE
-# ============================================================
+
 
 meta_patient["response_binary"] = (
     meta_patient["response"]
@@ -318,9 +290,9 @@ meta_patient["response_binary"] = (
 )
 
 
-# ============================================================
+
 # 8. ENCODE CLINICAL COVARIATES
-# ============================================================
+
 
 meta_patient["bone_marrow_bin"] = (
     meta_patient["bone_marrow"]
@@ -351,9 +323,9 @@ meta_patient["lesion_bin"] = (
 )
 
 
-# ============================================================
+
 # 9. CLINICAL DIAGNOSTICS
-# ============================================================
+
 
 print(
     "\nClinical variable diagnostics:"
@@ -381,9 +353,9 @@ for col in clinical_binary:
     )
 
 
-# ============================================================
+
 # 10. FIND SIGNIFICANT RESPONSE GSEA PATHWAYS
-# ============================================================
+
 
 response_gsea = (
     gsea_response[
@@ -402,11 +374,6 @@ response_terms = (
 )
 
 
-print(
-    "\nSignificant response GSEA pathways:",
-    len(response_terms)
-)
-
 
 if len(response_terms) == 0:
 
@@ -416,9 +383,9 @@ if len(response_terms) == 0:
     )
 
 
-# ============================================================
+
 # 11. MATCH GSEA PATHWAYS TO ssGSEA MATRIX
-# ============================================================
+
 
 available_terms = [
     term
@@ -432,12 +399,6 @@ missing_terms = [
     for term in response_terms
     if term not in scores_patient.columns
 ]
-
-
-print(
-    f"Response pathways found in ssGSEA matrix: "
-    f"{len(available_terms)}"
-)
 
 
 if missing_terms:
@@ -461,9 +422,9 @@ if len(available_terms) == 0:
     )
 
 
-# ============================================================
+
 # 12. SAVE PATHWAYS USED
-# ============================================================
+
 
 selected_pathways = pd.DataFrame({
     "pathway": available_terms
@@ -480,23 +441,8 @@ selected_pathways.to_csv(
 )
 
 
-# ============================================================
+
 # 13. PATHWAY SCORE DIAGNOSTICS
-# ============================================================
-
-print(
-    "\n"
-    + "=" * 80
-)
-
-print(
-    "PATHWAY SCORE DIAGNOSTICS"
-)
-
-print(
-    "=" * 80
-)
-
 
 score_diagnostics = []
 
@@ -560,22 +506,10 @@ print(
 )
 
 
-# ============================================================
+
 # 14. CHECK IDENTICAL / HIGHLY CORRELATED PATHWAYS
-# ============================================================
 
-print(
-    "\n"
-    + "=" * 80
-)
 
-print(
-    "PATHWAY CORRELATION DIAGNOSTICS"
-)
-
-print(
-    "=" * 80
-)
 
 
 correlation_matrix = (
@@ -596,10 +530,8 @@ correlation_matrix.to_csv(
     sep="\t"
 )
 
-
-# ------------------------------------------------------------
 # Find highly correlated pairs
-# ------------------------------------------------------------
+
 
 high_corr_pairs = []
 
@@ -696,9 +628,9 @@ else:
     )
 
 
-# ============================================================
+
 # 15. STANDARDIZE PATHWAY SCORES
-# ============================================================
+
 #
 # IMPORTANT:
 #
@@ -714,8 +646,8 @@ else:
 #     per 1 SD increase in pathway score.
 #
 # This avoids extremely large OR simply because
-# the raw score has a small numerical scale.
-# ============================================================
+# the raw score has a small numerical scale
+
 
 scores_patient_z = pd.DataFrame(
     index=scores_patient.index
@@ -778,9 +710,9 @@ scores_patient_z.to_csv(
 )
 
 
-# ============================================================
+
 # 16. LOGISTIC REGRESSION FUNCTION
-# ============================================================
+
 
 def run_logistic(
     df,
@@ -858,9 +790,8 @@ def run_logistic(
     )
 
 
-    # --------------------------------------------------------
     # Check event counts
-    # --------------------------------------------------------
+    
 
     n_responder = int(
         (y == 1).sum()
@@ -871,9 +802,8 @@ def run_logistic(
     )
 
 
-    # --------------------------------------------------------
     # Fit model
-    # --------------------------------------------------------
+ 
 
     try:
 
@@ -912,9 +842,9 @@ def run_logistic(
     )
 
 
-    # --------------------------------------------------------
+   
     # Detect suspiciously extreme fitted probabilities
-    # --------------------------------------------------------
+ 
 
     fitted_probabilities = (
         model.predict(X)
@@ -931,9 +861,9 @@ def run_logistic(
     )
 
 
-    # --------------------------------------------------------
+    
     # Build results
-    # --------------------------------------------------------
+
 
     result_rows = []
 
@@ -1024,9 +954,9 @@ def run_logistic(
     )
 
 
-# ============================================================
+
 # 17. PREPARE REGRESSION DATASET
-# ============================================================
+
 
 regression_df = meta_patient.copy()
 
@@ -1053,22 +983,8 @@ regression_df.to_csv(
 )
 
 
-# ============================================================
+
 # 18. UNIVARIATE LOGISTIC REGRESSION
-# ============================================================
-
-print(
-    "\n"
-    + "=" * 80
-)
-
-print(
-    "UNIVARIATE LOGISTIC REGRESSION"
-)
-
-print(
-    "=" * 80
-)
 
 
 univariate_results = []
@@ -1143,9 +1059,8 @@ logistic_univariate = pd.concat(
 )
 
 
-# ------------------------------------------------------------
 # Rename predictor
-# ------------------------------------------------------------
+
 
 logistic_univariate[
     "predictor"
@@ -1165,9 +1080,9 @@ logistic_univariate[
 )
 
 
-# ------------------------------------------------------------
+
 # FDR across PATHWAYS only
-# ------------------------------------------------------------
+
 
 logistic_univariate[
     "padj"
@@ -1179,9 +1094,9 @@ logistic_univariate[
 )[1]
 
 
-# ------------------------------------------------------------
+
 # Save
-# ------------------------------------------------------------
+
 
 logistic_univariate = (
     logistic_univariate
@@ -1201,22 +1116,8 @@ logistic_univariate.to_csv(
 )
 
 
-# ============================================================
+
 # 19. MULTIVARIABLE LOGISTIC REGRESSION
-# ============================================================
-
-print(
-    "\n"
-    + "=" * 80
-)
-
-print(
-    "MULTIVARIABLE LOGISTIC REGRESSION"
-)
-
-print(
-    "=" * 80
-)
 
 
 clinical_covariates = [
@@ -1292,9 +1193,9 @@ logistic_multivariable = pd.concat(
 )
 
 
-# ============================================================
+
 # 20. HUMAN-READABLE PREDICTOR LABELS
-# ============================================================
+
 
 predictor_labels = {
 
@@ -1337,9 +1238,8 @@ logistic_multivariable.loc[
 )
 
 
-# ============================================================
 # 21. SEPARATE FDR CORRECTION BY TEST FAMILY
-# ============================================================
+
 
 # IMPORTANT:
 #
@@ -1359,9 +1259,8 @@ logistic_multivariable[
 ] = np.nan
 
 
-# ------------------------------------------------------------
 # 21.1 Pathway FDR
-# ------------------------------------------------------------
+
 
 is_pathway_test = (
     logistic_multivariable[
@@ -1382,9 +1281,8 @@ logistic_multivariable.loc[
 )[1]
 
 
-# ------------------------------------------------------------
 # 21.2 Clinical FDR
-# ------------------------------------------------------------
+
 
 for clinical_predictor in clinical_covariates:
 
@@ -1411,9 +1309,8 @@ for clinical_predictor in clinical_covariates:
         )[1]
 
 
-# ============================================================
 # 22. SAVE MULTIVARIABLE RESULTS
-# ============================================================
+
 
 logistic_multivariable = (
     logistic_multivariable
@@ -1435,10 +1332,8 @@ logistic_multivariable.to_csv(
     index=False
 )
 
-
-# ============================================================
 # 23. SAVE FAILED MODELS
-# ============================================================
+
 
 if len(univariate_failed) > 0:
 
@@ -1468,9 +1363,8 @@ if len(multivariable_failed) > 0:
     )
 
 
-# ============================================================
 # 24. MODEL SUMMARY
-# ============================================================
+
 
 model_summary = []
 

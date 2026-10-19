@@ -50,9 +50,9 @@ def volcano_plot(
 
     df = de_results.copy()
 
-    # --------------------------------------------------------
+    
     # Convert columns to numeric
-    # --------------------------------------------------------
+    
 
     df["padj"] = pd.to_numeric(
         df["padj"],
@@ -71,17 +71,17 @@ def volcano_plot(
         ]
     )
 
-    # --------------------------------------------------------
+    
     # -log10 adjusted p-value
-    # --------------------------------------------------------
+    
 
     df["minus_log10_padj"] = (
         -np.log10(df["padj"] + 1e-300)
     )
 
-    # --------------------------------------------------------
+   
     # Significance
-    # --------------------------------------------------------
+    
 
     df["significance"] = "NS"
 
@@ -97,9 +97,9 @@ def volcano_plot(
         "significance"
     ] = "Down"
 
-    # --------------------------------------------------------
+  
     # Plot
-    # --------------------------------------------------------
+    
 
     plt.figure(figsize=(8, 6))
 
@@ -118,9 +118,9 @@ def volcano_plot(
         linewidth=0
     )
 
-    # --------------------------------------------------------
+    
     # Labels for top genes
-    # --------------------------------------------------------
+    
 
     top_genes = (
         df[
@@ -177,10 +177,9 @@ def volcano_plot(
                 bbox=label_bbox
             )
 
-    # --------------------------------------------------------
+   
     # Threshold lines
-    # --------------------------------------------------------
-
+    
     plt.axvline(
         logfc_cutoff,
         color="black",
@@ -202,9 +201,8 @@ def volcano_plot(
         linewidth=1
     )
 
-    # --------------------------------------------------------
     # Labels
-    # --------------------------------------------------------
+    
 
     plt.xlabel(
         f"log2 Fold Change\n{comparison_label}"
@@ -224,9 +222,9 @@ def volcano_plot(
 
     plt.tight_layout()
 
-    # --------------------------------------------------------
+    
     # Save
-    # --------------------------------------------------------
+    
 
     output_file = os.path.join(
         args.figures,
@@ -243,9 +241,9 @@ def volcano_plot(
 
 
 
-# ============================================================
+
 # 5. Run for all timepoints
-# ============================================================
+
 
 TIMEPOINTS = {
     "product": "DESeq2_product.tsv",
@@ -269,10 +267,7 @@ for timepoint, filename in TIMEPOINTS.items():
 
         continue
 
-    print(
-        f"\nProcessing {timepoint}..."
-    )
-
+    # save
     results = pd.read_csv(
         results_file,
         sep="\t",
@@ -286,9 +281,3 @@ for timepoint, filename in TIMEPOINTS.items():
         timepoint=timepoint,
         outdir=args.figures
     )
-
-
-
-print("\n======================================")
-print("VOLCANO PLOTS FINISHED")
-print("======================================")
